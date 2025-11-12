@@ -73,9 +73,7 @@ class ProtoBoardScene(QGraphicsScene):
             print("No corners!!")
             return
 
-        self.row = 18
-        self.col = 24
-        # self.row, self.col = self.calculate_rows_cols()
+        self.row, self.col = self.calculate_rows_cols()
 
         # Draw a simple rectangular grid for now
         for i in range(self.row):
