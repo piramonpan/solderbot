@@ -62,16 +62,16 @@ def gcode_test(serial_port):
     y = writer.rapid_positioning(x=None, y=50)
     ser.write((y + '\n').encode())
 
-    x = writer.rapid_positioning(x=20, y=None)
+    x = writer.rapid_positioning(x=20, y=50)
     ser.write((x + '\n').encode())
 
-    y = writer.rapid_positioning(x=None, y=-50)
+    y = writer.rapid_positioning(x=20, y=None)
     ser.write((y + '\n').encode())
 
     x = writer.rapid_positioning(x=40, y=None)
     ser.write((x + '\n').encode())
 
-    y = writer.rapid_positioning(x=None, y=25)
+    y = writer.rapid_positioning(x=40, y=25)
     ser.write((y + '\n').encode())
 
     z = writer.move_up_down(5) # TO DO: figure if positive or negative z is down
