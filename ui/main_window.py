@@ -35,8 +35,14 @@ class MainWindow(QMainWindow):
 
         corners = self.board_tab.scene.corner_points
         points = self.board_tab.scene.points
-        lines = zip(self.board_tab.scene.start_lines, self.board_tab.scene.end_lines)
+        start_lines = self.board_tab.scene.start_lines
+        end_lines = self.board_tab.scene.end_lines
 
+        points_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in points]
+        start_lines_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in start_lines]
+        end_lines_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in end_lines]
+        lines_index = zip(start_lines_index, end_lines_index)
+        
         data = {
             "corner_camera_pixel": {
                 "top_left": corners[0],
@@ -44,8 +50,8 @@ class MainWindow(QMainWindow):
                 "bottom_left": corners[2],
                 "bottom_right": corners[3]
             },
-            "points": points,
-            "lines": [{"start": start, "end": end} for start, end in lines]
+            "points": points_index,
+            "lines": [{"start": start, "end": end} for start, end in lines_index]
         }
 
         # Save JSON
@@ -54,6 +60,11 @@ class MainWindow(QMainWindow):
 
         print(f"{filename} saved successfully!")
 
+    def calculate_hole_number(self, x, y):
+        x_num = int((x - 3) / 20) + 1
+        y_num = int((y -3) / 20) + 1
+
+        return x_num, y_num
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
