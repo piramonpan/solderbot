@@ -1,7 +1,12 @@
 """ This Python Class is used to translate user commands into gcode commands """
 
 class GCodeWriter:
-
+    # +z = up
+    # -z = down
+    # +x = right (facing front)
+    # -x = left
+    # +y = away? (facing front)
+    # -y = towards
     def rapid_positioning(x, y) :
         """ Moves the end effector in a straight line in the xy-plane. This will
         move the gantry at maximum speed (as defined by the hardware) """
@@ -35,11 +40,24 @@ class GCodeWriter:
             command += f'Z{z:.3f}'
 
         return command
+    
+    def wait(mil_sec):
+        """" Pauses command queue for x milliseconds soldering to occur """
 
+        command = f'G4 P{mil_sec}'
+
+        return command
+
+    def set_reference():
+        """ Sets the current position as the reference point """
+
+        command = 'G28.1'
+        return command
+    
     def reset():
         """ Moves end effector to reference point """
 
-        command = 'G28' # TO DO: how to set reference point/what is reference point?
+        command = 'G28'
         return command
     
     def positioning(reference):
