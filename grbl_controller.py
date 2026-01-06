@@ -11,11 +11,12 @@ from gcodewriter import GCodeWriter as writer
 # constants
 PORT = "COM7" # change to correct port
 BAUDRATE = 115200
-HEIGHT = 20 # (in mm)
+HEIGHT = 5 # (in mm)
 LINE_FEEDRATE = 50 # TO DO: figure out the best feedrate for soldering lines
 SCALE = 2.5 # distance between holes (in mm) <-- i think? need to double check
+SOLDER_TIME = 5000 # how long the solder is held over a point (in ms)
 
-###############################################################################
+############################## Helper Functions ###############################
 def list_available_ports():
     """ Lists available ports on laptop """
 
@@ -27,6 +28,58 @@ def list_available_ports():
         for port in ports:
             print(f"  {port.device}")
 
+def poll_grbl(ser):
+    """Polls GRBL until it reports Idle."""
+    while True:
+        ser.write(b"?")   # status report
+        time.sleep(0.1)
+
+        if ser.in_waiting:
+            status = ser.readline().decode().strip()
+            print("STATUS:", status)
+
+            if "Idle" in status:
+                return
+        time.sleep(0.2)
+
+def gcode_test(serial_port):
+    """ Test basic movement of gantry 
+    parameters: 
+        serial_port: the COM port connecting the laptop to the gantry's 
+                        microcontroller
+    returns: None
+    """
+    ser = serial.Serial(port=serial_port, baudrate=BAUDRATE)
+    time.sleep(2)
+    ser.flushInput() # Clear any startup messages from the buffer
+
+    # reset and go to reference point
+    '''reset = writer.reset()
+    ser.write((reset + '\n').encode())'''
+
+    # set positioning to absolute
+    positioning = writer.positioning("absolute")
+    ser.write((positioning + '\n').encode())
+
+    y = writer.rapid_positioning(x=None, y=50)
+    ser.write((y + '\n').encode())
+
+    x = writer.rapid_positioning(x=20, y=50)
+    ser.write((x + '\n').encode())
+
+    y = writer.rapid_positioning(x=20, y=None)
+    ser.write((y + '\n').encode())
+
+    x = writer.rapid_positioning(x=40, y=None)
+    ser.write((x + '\n').encode())
+
+    y = writer.rapid_positioning(x=40, y=25)
+    ser.write((y + '\n').encode())
+
+    z = writer.move_up_down(5)
+    ser.write((z + '\n').encode())
+
+########################### Path Planning Functions ###########################
 def check_ports(port):
     """ Tests port connection by attempting to open input port 
     parameters:
@@ -84,10 +137,7 @@ def format_json(json_data) -> list:
         solder_list.append(("line", start, end))
 
     # TO DO: get corner coordinates
-
-    ## uncomment for debugging
-    #for solder in solder_list:
-    #    print(f"{solder}")
+    # use corner coordinates to determine last column
 
     return solder_list
 
@@ -103,6 +153,7 @@ def generate_gcode(data_list: list, last_col) -> list:
     commands = []
 
     # reset and go to reference point
+    commands.append(writer.positioning('absolute'))
     commands.append(writer.reset())
 
     for col in range(0, last_col):
@@ -116,8 +167,8 @@ def generate_gcode(data_list: list, last_col) -> list:
                 commands.append(writer.rapid_positioning(x_coord, y_coord))
 
                 # lower end effector and solder
-                commands.append(writer.move_up_down(-HEIGHT))     # TO DO: figure out vertical distance required
-                commands.append(writer.wait(5000))
+                commands.append(writer.move_up_down(-HEIGHT))   # TO DO: figure out vertical distance required
+                commands.append(writer.wait(SOLDER_TIME))      # TO DO: test wait command with changes to 'ok' check         
 
                 # raise end effector once soldering is complete
                 commands.append(writer.move_up_down(HEIGHT))
@@ -136,6 +187,8 @@ def generate_gcode(data_list: list, last_col) -> list:
                                                             LINE_FEEDRATE))
                 commands.append(writer.move_up_down(HEIGHT))
     
+    commands.append(writer.reset())
+
     return commands
 
 def send_commands(serial_port, commands):
@@ -150,16 +203,45 @@ def send_commands(serial_port, commands):
     # point to serial port and clear any startup messages from the buffer
     ser = serial.Serial(port=serial_port, baudrate=BAUDRATE)
     time.sleep(2)
-    ser.flushInput()
+
+    # unlock GRBL
+    ser.write(b"$X\n")
+    time.sleep(0.1)
+    while ser.in_waiting:
+        print("Unlock:", ser.readline().decode().strip()) 
 
     # send gcode commands
     for command in commands:
         ser.write((command + '\n').encode())
+        print(command)
+        start = time.time()
+        
+        while True:
+            if ser.in_waiting:
+                response = ser.readline().decode('utf-8').strip()
+                print(f"Received response: {response}")
+
+                # Check for the 'ok' response to know when it's safe to send the 
+                # next command. Check is skipped is command was wait
+                if command == writer.wait(SOLDER_TIME):
+                    break
+                elif "ok" in response.lower(): 
+                    break
+            
+            if time.time() - start > 10:
+                print("Timeout waiting for response")
+                break
+        
+        # get grbl status while sending commands
+        poll_grbl(ser)
 
     print("Soldering complete")
     
 def set_reference():
+    command = []
 
+    command.append(writer.set_reference())
+    send_commands("COM7", command)
     # move to initial hard coded reference point
     ## GUI asks user if this position is correct
     # if position is correct:
@@ -171,57 +253,19 @@ def set_reference():
         # send_commands
     return
 
-def gcode_test(serial_port):
-    """ Test basic movement of gantry 
-    parameters: 
-        serial_port: the COM port connecting the laptop to the gantry's 
-                        microcontroller
-    returns: None
-    """
-    ser = serial.Serial(port=serial_port, baudrate=BAUDRATE)
-    time.sleep(2)
-    ser.flushInput() # Clear any startup messages from the buffer
-
-    # reset and go to reference point
-    reset = writer.reset()
-    ser.write((reset + '\n').encode())
-
-    # set positioning to absolute
-    positioning = writer.positioning("absolute")
-    ser.write((positioning + '\n').encode())
-
-    y = writer.rapid_positioning(x=None, y=50)
-    ser.write((y + '\n').encode())
-
-    x = writer.rapid_positioning(x=20, y=50)
-    ser.write((x + '\n').encode())
-
-    y = writer.rapid_positioning(x=20, y=None)
-    ser.write((y + '\n').encode())
-
-    x = writer.rapid_positioning(x=40, y=None)
-    ser.write((x + '\n').encode())
-
-    y = writer.rapid_positioning(x=40, y=25)
-    ser.write((y + '\n').encode())
-
-    z = writer.move_up_down(5)
-    ser.write((z + '\n').encode())
-
+################################ Main Function ################################
 def main():
     # test port connection
-    '''connection = check_ports(PORT.device)
-
-    if connection is True:
-        # run test code
-        gcode_test("COM7")
-    else: 
-        print(f"Unable to connect to gantry through {PORT}")'''
-    
+    connection = check_ports(PORT)
+  
     # read json file
-    data = load_json()
-    format_json(data)
-
+    if connection is True:
+        data = load_json()
+        solder_list = format_json(data)
+        commands = generate_gcode(solder_list, 24)
+        send_commands(PORT, commands)
+    else: 
+        print(f"Unable to connect to gantry through {PORT}")
 
 if __name__ == '__main__':
     main()

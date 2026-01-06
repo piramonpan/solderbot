@@ -37,7 +37,7 @@ class GCodeWriter:
 
         command = 'G0 '
         if z is not None:
-            command += f'Z{z:.3f}'
+            command += f'Z{z}'
 
         return command
     
@@ -65,9 +65,9 @@ class GCodeWriter:
         absolutely (absolute = with reference to zero, relative = with reference
         to current position) """
 
-        if reference is "absolute":
+        if reference == "absolute":
             command = 'G90'
-        elif reference is "relative":
+        elif reference == "relative":
             command = 'G91'
         
         return command
