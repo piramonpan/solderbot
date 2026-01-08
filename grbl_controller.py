@@ -168,7 +168,6 @@ def generate_gcode(data_list: list, last_col) -> list:
 
                 # lower end effector and solder
                 commands.append(writer.move_up_down(-HEIGHT))   # TO DO: figure out vertical distance required
-                commands.append(writer.wait(SOLDER_TIME))      # TO DO: test wait command with changes to 'ok' check         
 
                 # raise end effector once soldering is complete
                 commands.append(writer.move_up_down(HEIGHT))
@@ -214,6 +213,7 @@ def send_commands(serial_port, commands):
     for command in commands:
         ser.write((command + '\n').encode())
         print(command)
+
         start = time.time()
         
         while True:
@@ -231,26 +231,25 @@ def send_commands(serial_port, commands):
             if time.time() - start > 10:
                 print("Timeout waiting for response")
                 break
-        
+
         # get grbl status while sending commands
         poll_grbl(ser)
+
+        # wait after lowering end effector
+        if command == writer.move_up_down(-HEIGHT):
+            print("waiting")
+            time.sleep(SOLDER_TIME/1000)
 
     print("Soldering complete")
     
 def set_reference():
-    command = []
-
-    command.append(writer.set_reference())
-    send_commands("COM7", command)
     # move to initial hard coded reference point
     ## GUI asks user if this position is correct
     # if position is correct:
         # command.append(writer.set_reference())
-        # send_commands
     # else:
         ## user moves gantry to correct reference point
         # command.append(writer.set_reference())
-        # send_commands
     return
 
 ################################ Main Function ################################
@@ -262,7 +261,8 @@ def main():
     if connection is True:
         data = load_json()
         solder_list = format_json(data)
-        commands = generate_gcode(solder_list, 24)
+        commands = generate_gcode(solder_list, 24)  # TO DO: change 24 to last_col
+        # set_reference()
         send_commands(PORT, commands)
     else: 
         print(f"Unable to connect to gantry through {PORT}")
