@@ -7,7 +7,7 @@ class GCodeWriter:
     # -x = left
     # +y = away? (facing front)
     # -y = towards
-    def rapid_positioning(x, y) :
+    def rapid_positioning(x: float , y: float) :
         """ Moves the end effector in a straight line in the xy-plane. This will
         move the gantry at maximum speed (as defined by the hardware) """
 
@@ -19,7 +19,7 @@ class GCodeWriter:
 
         return command
     
-    def linear_interpolation(x, y, f):
+    def linear_interpolation(x: float, y: float, f: float):
         """ Moves the end effector in a straight line in the xy-plane """
 
         command = 'G1'
@@ -32,7 +32,7 @@ class GCodeWriter:
 
         return command
     
-    def move_up_down(z):
+    def move_up_down(z: float):
         """ Moves end effector up or down using rapid positioning """
 
         command = 'G0 '
@@ -41,7 +41,7 @@ class GCodeWriter:
 
         return command
     
-    def wait(mil_sec):
+    def wait(mil_sec: int):
         """" Pauses command queue for x milliseconds soldering to occur """
 
         command = f'G4 P{mil_sec}'
@@ -60,7 +60,7 @@ class GCodeWriter:
         command = 'G28'
         return command
     
-    def positioning(reference):
+    def positioning(reference: str):
         """ Sets whether the coordinates should be interpreted relatively or 
         absolutely (absolute = with reference to zero, relative = with reference
         to current position) """
@@ -72,6 +72,23 @@ class GCodeWriter:
         
         return command
     
-    def velocity_to_feedrate(velocity):
-        return f"F{velocity:.1f}"
+    def start_dispensing(speed: float):
+        """ Turns the spool feed motor clockwise? to start dispensing solder 
+        wire """
+        
+        command = f'M3 S{speed}'
+        return command
+    
+    def retract_solder(speed: float):
+        """ Turns the spool feed motor counter-clockwise? to retract solder
+        wire """
+
+        command = f'M4 S{speed}'
+        return command
+    
+    def stop_dispensing():
+        """ Stops the spool feed motor """
+        
+        command = 'M5'
+        return command
 

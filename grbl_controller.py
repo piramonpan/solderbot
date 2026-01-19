@@ -9,12 +9,13 @@ from serial.tools import list_ports
 from gcodewriter import GCodeWriter as writer
 
 # constants
-PORT = "COM7" # change to correct port
-BAUDRATE = 115200
-HEIGHT = 5 # (in mm)
-LINE_FEEDRATE = 50 # TO DO: figure out the best feedrate for soldering lines
-SCALE = 2.5 # distance between holes (in mm) <-- i think? need to double check
-SOLDER_TIME = 5000 # how long the solder is held over a point (in ms)
+PORT                    = "COM7" # change to correct port
+BAUDRATE                = 115200
+HEIGHT                  = 1 # (in mm)
+LINE_FEEDRATE           = 50 # TO DO: figure out the best feedrate for soldering lines
+SCALE                   = 2.5 # distance between holes (in mm) <-- i think? need to double check
+SOLDER_TIME             = 5000 # how long the solder is held over a point (in ms)
+SOLDER_DISPENSE_RATE    = 160 # spool feed motor speed (in rpm, lowest speed: 160)
 
 ############################## Helper Functions ###############################
 def list_available_ports():
@@ -53,34 +54,47 @@ def gcode_test(serial_port):
     time.sleep(2)
     ser.flushInput() # Clear any startup messages from the buffer
 
+    # unlock GRBL
+    ser.write(b"$X\n")
+    time.sleep(0.1)
+    while ser.in_waiting:
+        print("Unlock:", ser.readline().decode().strip()) 
+
     # reset and go to reference point
     '''reset = writer.reset()
     ser.write((reset + '\n').encode())'''
-
+    
     # set positioning to absolute
     positioning = writer.positioning("absolute")
     ser.write((positioning + '\n').encode())
 
-    y = writer.rapid_positioning(x=None, y=50)
-    ser.write((y + '\n').encode())
+    dispense = writer.start_dispensing(SOLDER_DISPENSE_RATE)
+    ser.write((dispense + '\n').encode())
 
-    x = writer.rapid_positioning(x=20, y=50)
-    ser.write((x + '\n').encode())
+    time.sleep(3)
 
-    y = writer.rapid_positioning(x=20, y=None)
-    ser.write((y + '\n').encode())
+    stop = writer.stop_dispensing()
+    ser.write((stop + '\n').encode())
 
-    x = writer.rapid_positioning(x=40, y=None)
+    retract = writer.retract_solder(SOLDER_DISPENSE_RATE)
+    ser.write((retract + '\n').encode())
+
+    time.sleep(3)
+
+    stop = writer.stop_dispensing()
+    ser.write((stop + '\n').encode())
+
+    '''x = writer.rapid_positioning(x=40, y=None)
     ser.write((x + '\n').encode())
 
     y = writer.rapid_positioning(x=40, y=25)
     ser.write((y + '\n').encode())
 
     z = writer.move_up_down(5)
-    ser.write((z + '\n').encode())
+    ser.write((z + '\n').encode())'''
 
 ########################### Path Planning Functions ###########################
-def check_ports(port):
+def check_ports(port: str) -> bool:
     """ Tests port connection by attempting to open input port 
     parameters:
         port: input port to test
@@ -98,7 +112,7 @@ def check_ports(port):
         print()
         return False
 
-def load_json():
+def load_json() -> dict:
     """ Loads the json file sent from the GUI 
     parameters: None
     returns: 
@@ -115,7 +129,7 @@ def load_json():
     
     return data
 
-def format_json(json_data) -> list:
+def format_json(json_data: dict) -> list:
     """ Reads and formats data from json file into a list
     parameters:
         json_data: data loaded in from the json file
@@ -168,6 +182,9 @@ def generate_gcode(data_list: list, last_col) -> list:
 
                 # lower end effector and solder
                 commands.append(writer.move_up_down(-HEIGHT))   # TO DO: figure out vertical distance required
+                commands.append(writer.start_dispensing(SOLDER_DISPENSE_RATE))
+                commands.append(writer.stop_dispensing())
+                #commands.append(writer.retract_solder(SOLDER_DISPENSE_RATE))
 
                 # raise end effector once soldering is complete
                 commands.append(writer.move_up_down(HEIGHT))
@@ -178,19 +195,26 @@ def generate_gcode(data_list: list, last_col) -> list:
                 commands.append(writer.rapid_positioning(x_coord, y_coord))
                 commands.append(writer.move_up_down(-HEIGHT))
 
+                # start dispensing solder
+                commands.append(writer.start_dispensing(SOLDER_DISPENSE_RATE))
+
                 # slowly drag solder to create line
                 end_x, end_y = data[2]
                 x_coord = end_x * SCALE
                 y_coord = end_y * SCALE
                 commands.append(writer.linear_interpolation(x_coord, y_coord, 
                                                             LINE_FEEDRATE))
+                
+                # stop soldering
+                commands.append(writer.stop_dispensing())
+                #commands.append(writer.retract_solder(SOLDER_DISPENSE_RATE))
                 commands.append(writer.move_up_down(HEIGHT))
     
     commands.append(writer.reset())
 
     return commands
 
-def send_commands(serial_port, commands):
+def send_commands(serial_port: str, commands: list) -> None:
     """ Sends GCODE command to gantry microcontroller by writing to serial 
     port.
     parameters:
@@ -239,6 +263,9 @@ def send_commands(serial_port, commands):
         if command == writer.move_up_down(-HEIGHT):
             print("waiting")
             time.sleep(SOLDER_TIME/1000)
+        elif command == writer.start_dispensing(SOLDER_DISPENSE_RATE):
+            print("dispensing")
+            time.sleep(3)
 
     print("Soldering complete")
     
