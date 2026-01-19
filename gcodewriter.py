@@ -91,4 +91,20 @@ class GCodeWriter:
         
         command = 'M5'
         return command
+    def velocity_to_feedrate(velocity):
+        return f"F{velocity:.1f}"
+    
+    def home_axis(axis, all=False):
+        """ Homes the specified axis ('x', 'y', or 'z') """
 
+        command = 'G28'
+        if all:
+            return command
+        if axis == 'x':
+            command += ' X0'
+        elif axis == 'y':
+            command += ' Y0'
+        elif axis == 'z':
+            command += ' Z0'
+        
+        return command
