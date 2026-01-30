@@ -137,6 +137,8 @@ class ImageSelectorWindow(QMainWindow):
         self.ok_button.clicked.connect(self.close_window)
         layout.addWidget(self.ok_button)
 
+        self.image_path = ""
+
     def get_image(self):
         # Load an image file at startup
         img_path, _ = QFileDialog.getOpenFileName(
@@ -146,6 +148,10 @@ class ImageSelectorWindow(QMainWindow):
         img_path = r"C:\Users\piram\Desktop\igen430\data\test_images\nov2.jpg"
         if img_path:
             self.view.load_image(img_path)
+            self.image_path = img_path
+        else:
+            print("No image selected.")
+            self.image_path = None
 
     def close_window(self):
         self.close()

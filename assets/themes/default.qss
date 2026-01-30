@@ -1,0 +1,176 @@
+/* Core Window Styling */
+ 
+QMainWindow, QWidget {
+    background-color: #F2F2F7;
+    color: #1C1C1E;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+QGroupBox {
+    background-color: #FFFFFF;
+    border-radius: 12px;
+    border: 1px solid #D1D1D6;
+    margin-top: 25px;
+    padding-top: 5px;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #8E8E93;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 2px;
+    top: 5px;
+}
+
+/* Base Button State */
+QPushButton {
+    background-color: #E5E5EA; /* Light grey */
+    border: 1px solid #D1D1D6;
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: #1C1C1E;
+    font-weight: 500;
+}
+
+/* Hover State - Visual feedback when mouse is over */
+QPushButton:hover {
+    background-color: #D1D1D6;
+    border-color: #AEAEB2;
+}
+
+/* Pressed State - Sinks the button when clicked */
+QPushButton:pressed {
+    background-color: #C7C7CC;
+    border: 2px solid #8E8E93;
+    padding-left: 12px; /* Slight offset for 'click' feel */
+    padding-top: 12px;
+}
+
+/* Disabled State - For safety (e.g., when robot is disconnected) */
+QPushButton:disabled {
+    background-color: #F2F2F7;
+    color: #C7C7CC;
+    border: 1px solid #E5E5EA;
+}
+
+QPushButton:hover { background-color: #D1D1D6; }
+
+QPushButton#btn_start {
+    background-color: #1b642d;
+    color: white;
+}
+
+QPushButton#btn_stop {
+    background-color: #a22a24;
+    color: white;
+}
+
+QProgressBar {
+    background-color: #E5E5EA;
+    border-radius: 6px;
+    text-align: center;
+    border: none;
+    min-height: 12px;
+    max-height: 12px;
+    font-size: 10px;
+}
+
+QProgressBar::chunk {
+    background-color: #007AFF;
+    border-radius: 6px;
+}
+
+QPlainTextEdit#log_panel {
+    background-color: #FFFFFF;
+    border: 1px solid #D1D1D6;
+    border-radius: 10px;
+    color: #3A3A3C;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+}
+
+QComboBox {
+    background-color: #F2F2F7;
+    border: 1px solid #D1D1D6;
+    border-radius: 6px;
+    padding: 4px 10px;
+}
+
+QLabel {
+    color: #1C1C1E;
+    background-color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 400;
+}
+
+
+QLabel#system_log_label {
+    color: #8E8E93;
+    background-color: #F2F2F7;
+    font-weight: 700;
+    font-size: 11px;
+    left: 2px;
+}
+
+#sidebar {
+    background-color: #EBEBEB;
+    border-right: 1px solid #D1D1D1;
+    padding-right: 5px;
+}
+
+/* Vertical Scrollbar Base */
+QScrollBar:vertical {
+    border: none;
+    background: #F2F2F7; /* Match window background */
+    width: 10px;         /* Thin, modern profile */
+    margin: 0px 0px 0px 0px;
+    border-radius: 5px;
+}
+
+/* The Handle (The part you drag) */
+QScrollBar::handle:vertical {
+    background: #C7C7CC; /* Soft grey handle */
+    min-height: 30px;
+    border-radius: 5px;
+    margin: 2px;        /* Adds space around the handle */
+}
+
+/* Handle Hover State */
+QScrollBar::handle:vertical:hover {
+    background: #AEAEB2; /* Slightly darker on hover */
+}
+
+/* Remove Arrows (The top and bottom buttons) */
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+    height: 0px;
+}
+
+/* Remove the "tracks" (The area above/below the handle) */
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* Horizontal Scrollbar (In case your logs are long) */
+QScrollBar:horizontal {
+    border: none;
+    background: #F2F2F7;
+    height: 10px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #C7C7CC;
+    border-radius: 5px;
+    margin: 2px;
+}
+
+
+QPushButton:checked {
+    background-color: #0078d7;
+    color: white;
+    border: 1px solid #005a9e;
+}
