@@ -112,14 +112,17 @@ def check_ports(port: str) -> bool:
         print()
         return False
 
-def load_json() -> dict:
-    """ Loads the json file sent from the GUI 
+def load_json() -> list:
+    """ Loads the json file sent from the GUI and reads/formats data into a list
     parameters: None
     returns: 
-        data: the data within the json file 
+        solder_list: formated list of points/lines that the user wants to 
+                    solder
     """
     data = {}
+    solder_list = []
 
+    # load json file
     try:
         with open('board_data.json', 'r') as file:
             data = json.load(file)
@@ -127,20 +130,9 @@ def load_json() -> dict:
     except FileNotFoundError:
         print("Error: The file was not found.")
     
-    return data
-
-def format_json(json_data: dict) -> list:
-    """ Reads and formats data from json file into a list
-    parameters:
-        json_data: data loaded in from the json file
-    returns:
-        solder_list: formated list of points/lines that the user wants to 
-                    solder
-    """
-    solder_list = []
-
-    points = json_data["points"]
-    lines = json_data["lines"]
+    # read/format data
+    points = data["points"]
+    lines = data["lines"]
 
     for point in points:
         solder_list.append(("point", point))
@@ -286,8 +278,7 @@ def main():
   
     # read json file
     if connection is True:
-        data = load_json()
-        solder_list = format_json(data)
+        solder_list = load_json()
         commands = generate_gcode(solder_list, 24)  # TO DO: change 24 to last_col
         # set_reference()
         send_commands(PORT, commands)
