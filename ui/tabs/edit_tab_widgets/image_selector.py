@@ -145,7 +145,7 @@ class ImageSelectorWindow(QMainWindow):
             self, "Select an image", "", "Images (*.png *.jpg *.jpeg)"
         )
         # TODO: Delete hardcode
-        img_path = r"C:\Users\piram\Desktop\igen430\data\test_images\nov2.jpg"
+        # img_path = r"C:\Users\piram\Desktop\igen430\data\test_images\nov2.jpg"
         if img_path:
             self.view.load_image(img_path)
             self.image_path = img_path

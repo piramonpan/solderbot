@@ -9,6 +9,7 @@ from ui.tabs.edit_tab_widgets.image_selector import ImageSelectorWindow
 from ui.tabs.edit_tab_widgets.protoboard import ProtoBoardSceneWithLines, ProtoBoardScene
 from ui.tabs.edit_tab_widgets.add_solder import AddSolderGroup
 from PyQt6.QtCore import Qt
+import json
 
 
 class BoardViewTab(QWidget):
@@ -63,6 +64,8 @@ class BoardViewTab(QWidget):
         self.add_solder_group.add_line_button.clicked.connect(self.change_line_mode)
         self.add_solder_group.add_point_button.clicked.connect(self.change_point_mode)
 
+        self.add_solder_group.use_image_done_button.clicked.connect(self.generate_board_json)
+        
     def load_image(self):
         self.image_select_window.get_image()
         self.image_select_window.show()
@@ -93,6 +96,47 @@ class BoardViewTab(QWidget):
 
         else:
             self.scene.add_point_mode = False
+
+    def generate_board_json(self, clicked, filename="board_data.json"):
+        """
+        corners: dict with keys 'top_left', 'top_right', 'bottom_left', 'bottom_right'
+                each value is a tuple/list of (x, y)
+        points: list of tuples/lists [(x1, y1), (x2, y2), ...]
+        lines: list of tuples of start/end points: [((x1,y1),(x2,y2)), ...]
+        """
+
+        corners = self.scene.corner_points
+        points = self.scene.points
+        start_lines = self.scene.start_lines
+        end_lines = self.scene.end_lines
+
+        points_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in points]
+        start_lines_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in start_lines]
+        end_lines_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in end_lines]
+        lines_index = zip(start_lines_index, end_lines_index)
+        
+        data = {
+            "corner_camera_pixel": {
+                "top_left": corners[0],
+                "top_right": corners[1],
+                "bottom_left": corners[2],
+                "bottom_right": corners[3]
+            },
+            "points": points_index,
+            "lines": [{"start": start, "end": end} for start, end in lines_index]
+        }
+
+        # Save JSON
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+        print(f"{filename} saved successfully!")
+
+    def calculate_hole_number(self, x, y):
+        x_num = int((x - 3) / 20) + 1
+        y_num = int((y -3) / 20) + 1
+
+        return x_num, y_num
 
 class BoardControlGroup(QGroupBox):
     # DONT NEED THIS YET....# 

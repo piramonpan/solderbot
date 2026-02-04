@@ -7,7 +7,7 @@ class GCodeWriter:
     # -x = left
     # +y = away? (facing front)
     # -y = towards
-    def rapid_positioning(x: float , y: float) :
+    def rapid_positioning(self, x: float | None , y: float | None):
         """ Moves the end effector in a straight line in the xy-plane. This will
         move the gantry at maximum speed (as defined by the hardware) """
 
@@ -19,7 +19,7 @@ class GCodeWriter:
 
         return command
     
-    def linear_interpolation(x: float, y: float, f: float):
+    def linear_interpolation(self, x: float, y: float, f: float):
         """ Moves the end effector in a straight line in the xy-plane """
 
         command = 'G1'
@@ -32,7 +32,7 @@ class GCodeWriter:
 
         return command
     
-    def move_up_down(z: float):
+    def move_up_down(self, z: float):
         """ Moves end effector up or down using rapid positioning """
 
         command = 'G0 '
@@ -41,26 +41,26 @@ class GCodeWriter:
 
         return command
     
-    def wait(mil_sec: int):
+    def wait(self, mil_sec: int):
         """" Pauses command queue for x milliseconds soldering to occur """
 
         command = f'G4 P{mil_sec}'
 
         return command
 
-    def set_reference():
+    def set_reference(self):
         """ Sets the current position as the reference point """
 
         command = 'G28.1'
         return command
     
-    def reset():
+    def reset(self):
         """ Moves end effector to reference point """
 
         command = 'G28'
         return command
     
-    def positioning(reference: str):
+    def positioning(self, reference: str):
         """ Sets whether the coordinates should be interpreted relatively or 
         absolutely (absolute = with reference to zero, relative = with reference
         to current position) """
@@ -72,29 +72,29 @@ class GCodeWriter:
         
         return command
     
-    def start_dispensing(speed: float):
+    def start_dispensing(self, speed: float):
         """ Turns the spool feed motor clockwise? to start dispensing solder 
         wire """
         
         command = f'M3 S{speed}'
         return command
     
-    def retract_solder(speed: float):
+    def retract_solder(self,speed: float):
         """ Turns the spool feed motor counter-clockwise? to retract solder
         wire """
 
         command = f'M4 S{speed}'
         return command
     
-    def stop_dispensing():
+    def stop_dispensing(self):
         """ Stops the spool feed motor """
         
         command = 'M5'
         return command
-    def velocity_to_feedrate(velocity):
+    def velocity_to_feedrate(self, velocity):
         return f"F{velocity:.1f}"
     
-    def home_axis(axis, all=False):
+    def home_axis(self, axis, all=False):
         """ Homes the specified axis ('x', 'y', or 'z') """
 
         command = 'G28'

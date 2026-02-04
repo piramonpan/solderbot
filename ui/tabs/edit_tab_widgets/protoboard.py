@@ -75,6 +75,9 @@ class ProtoBoardScene(QGraphicsScene):
 
         self.row, self.col = self.calculate_rows_cols()
 
+        self.col = 24
+        self.row = 9
+
         # Draw a simple rectangular grid for now
         for i in range(self.row):
             for j in range(self.col):

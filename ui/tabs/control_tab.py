@@ -1,11 +1,108 @@
 import sys
 import argparse
+import logging
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QGridLayout, QPushButton, QLabel, 
                              QSlider, QProgressBar, QTabWidget, QFrame, 
                              QGroupBox, QComboBox, QSizePolicy, QPlainTextEdit)
-from PyQt6.QtCore import Qt, QDateTime
-import logging
+from PyQt6.QtCore import Qt, QDateTime, QThread, pyqtSignal
+from PyQt6.QtGui import QImage, QPixmap
+import cv2
+from core.grbl_controller import GRBLController
+
+logger = logging.getLogger("SolderBot")
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+
+class GCodeWorker(QObject):
+    # Signal to update the UI logger from the background
+    log_requested = pyqtSignal(str)
+    
+    def __init__(self, gcode_controller : GRBLController):
+        super().__init__()
+        self.controller = gcode_controller
+
+    @pyqtSlot(str, float)
+    def execute_jog(self, axis, step_size):
+        """Processes the jog command in the background thread."""
+        if not self.controller:
+            return
+
+        self.log_requested.emit(f"Jogging {axis} by {step_size}")
+        
+        try:
+            # # 1. Set to Relative Positioning
+            commands = []
+
+            if axis == "X" or axis == "Y":
+                commands.append(self.controller.writer.positioning(reference="relative"))
+                
+                # 2. Build Command based on axis
+                x_val = step_size if axis == "X" else None
+                y_val = step_size if axis == "Y" else None
+                
+                commands.append(self.controller.writer.rapid_positioning(x=x_val, y=y_val))
+            
+            elif axis == "Z":
+                commands.append(self.controller.writer.positioning(reference="relative"))
+                commands.append(self.controller.writer.move_up_down(z=step_size))
+
+            # 3. Send via Serial/Network
+            self.controller.send_commands(commands=commands)
+            
+        except Exception as e:
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
+
+    @pyqtSlot()
+    def execute_home(self):
+        """Processes the HOME command in the background thread."""
+        if not self.controller:
+            return
+
+        self.log_requested.emit("Homing all axes...")
+        
+        try:
+            command = self.controller.writer.home_axis(axis="all")
+            self.controller.send_commands(commands=[command])
+            
+        except Exception as e:
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
+
+    @pyqtSlot()
+    def execute_first(self):
+        x_val = 60
+        y_val = 60
+
+        """Processes the GO TO FIRST POINT command in the background thread."""
+
+        if not self.controller:
+            return
+
+        self.log_requested.emit("Moving to first point...")
+        
+        try:
+            commands = []
+            command = self.controller.writer.positioning(reference="absolute")
+            commands.append(command)   
+            command = self.controller.writer.rapid_positioning(x=x_val, y=y_val)
+            commands.append(command)
+            self.controller.send_commands(commands=commands)
+            
+        except Exception as e:
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
+
+    @pyqtSlot()
+    def execute_soldering(self):
+        """Starts the soldering sequence."""
+        if not self.controller:
+            return
+
+        self.log_requested.emit("Starting soldering sequence...")
+        
+        try:
+            self.controller.start_soldering()
+            
+        except Exception as e:
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
 
 class JogControlPanel(QWidget):
 
@@ -37,12 +134,12 @@ class JogControlPanel(QWidget):
         self.btn_x_neg = QPushButton("X-")
         self.btn_z_pos = QPushButton("Z Up")
         self.btn_z_neg = QPushButton("Z Down")
-        self.btn_home = QPushButton("HOME")
-        self.btn_home.setStyleSheet("background-color: #1C1C1E; color: white;")
+        # self.btn_home = QPushButton("HOME")
+        # self.btn_home.setStyleSheet("background-color: #1C1C1E; color: white;")
 
         grid.addWidget(self.btn_y_pos, 0, 1)
         grid.addWidget(self.btn_x_neg, 1, 0)
-        grid.addWidget(self.btn_home, 1, 1)
+        # grid.addWidget(self.btn_home, 1, 1)
         grid.addWidget(self.btn_x_pos, 1, 2)
         grid.addWidget(self.btn_y_neg, 2, 1)
         grid.addWidget(self.btn_z_pos, 0, 3)
@@ -52,7 +149,7 @@ class JogControlPanel(QWidget):
         step_layout = QHBoxLayout()
         step_layout.addWidget(QLabel("Step (mm):"))
         self.step_dropdown = QComboBox()
-        self.step_dropdown.addItems(["0.1", "0.5", "1", "5", "10"])
+        self.step_dropdown.addItems(["0.1", "0.5", "1", "2.54", "5", "10"])
         self.step_dropdown.setCurrentIndex(2)
         step_layout.addWidget(self.step_dropdown, stretch=1)
         step_layout.addStretch(2)
@@ -76,26 +173,56 @@ class JogControlPanel(QWidget):
         return self.step_dropdown.currentText()
 
 class ControlTab(QWidget):
-    def __init__(self, logger :logging.Logger=None, gcode_controller=None, testing=True): #type: ignore
+    request_jog = pyqtSignal(str, float)
+    request_home = pyqtSignal()
+    request_first = pyqtSignal()
+    request_soldering = pyqtSignal()
+
+    def __init__(self, logger :logging.Logger=logger, gcode_controller : GRBLController=None, testing=True): #type: ignore
         super().__init__()
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(25)
     
         self.gcode_controller = gcode_controller
+        if self.gcode_controller is None:
+            logger.warning("No GCode controller provided to ControlTab. Cannot move robot.")
+
         self.logger = logger
         self.init_ui()
-        
+
+        ### START CAMERA WORKER THREAD ###
+        self.camera_worker = CameraWorker()
+        self.camera_worker.frame_received.connect(self.update_label)
+        self.camera_worker.start()
+        print("Camera worker started...")
+
+
+        ### GCODE WORKER THREAD ####
+        # 1. Thread Setup
+        if self.gcode_controller:
+            self.gcode_thread = QThread()
+            self.worker = GCodeWorker(self.gcode_controller)
+            self.worker.moveToThread(self.gcode_thread)
+
+            # 2. Wire up the Signals
+            self.request_jog.connect(self.worker.execute_jog)
+            self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
+            self.request_home.connect(self.worker.execute_home)
+            self.request_first.connect(self.worker.execute_first)
+            self.request_soldering.connect(self.worker.execute_soldering)   
+
         if self.gcode_controller or testing:
-            self.jog_widget.btn_x_pos.clicked.connect(self.x_pos)
-            self.jog_widget.btn_x_neg.clicked.connect(self.x_neg)
-            self.jog_widget.btn_y_pos.clicked.connect(self.y_pos)
-            self.jog_widget.btn_y_neg.clicked.connect(self.y_neg)
-            self.jog_widget.btn_z_pos.clicked.connect(self.z_pos)
-            self.jog_widget.btn_z_neg.clicked.connect(self.z_neg)
-            self.jog_widget.btn_home.clicked.connect(self.btn_home_clicked)
-            self.btn_start.clicked.connect(self.btn_start_clicked)
-            self.btn_stop.clicked.connect(self.btn_stop_clicked)
+            # 3. Start the engine
+            self.gcode_thread.start()
+            # 4. Connect Buttons using the 'Parameter' logic we discussed
+            self.jog_widget.btn_x_pos.clicked.connect(lambda: self.issue_jog("X", 1))
+            self.jog_widget.btn_x_neg.clicked.connect(lambda: self.issue_jog("X", -1))
+            self.jog_widget.btn_y_pos.clicked.connect(lambda: self.issue_jog("Y", 1))
+            self.jog_widget.btn_y_neg.clicked.connect(lambda: self.issue_jog("Y", -1))
+            self.jog_widget.btn_z_neg.clicked.connect(lambda: self.issue_jog("Z", -1))
+            self.jog_widget.btn_z_pos.clicked.connect(lambda: self.issue_jog("Z", 1))
+
 
     def log(self, msg):
         self.log_output.appendPlainText(f"{msg}")
@@ -107,13 +234,25 @@ class ControlTab(QWidget):
 
         # Camera Feed
         self.camera_feed = QFrame()
-        self.camera_feed.setMinimumSize(640, 400)
+        self.camera_feed.setMinimumSize(520, 400)
         self.camera_feed.setStyleSheet("background-color: #000; border-radius: 15px;")
         feed_layout = QVBoxLayout(self.camera_feed)
-        lbl = QLabel("PRIMARY CAMERA FEED")
-        lbl.setStyleSheet("color: #555;")
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        feed_layout.addWidget(lbl)
+
+        self.primary_feed = QLabel("PRIMARY CAMERA FEED")
+        self.primary_feed.setStyleSheet("color: #555;")
+        self.primary_feed.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        feed_layout.addWidget(self.primary_feed)
+
+        self.zoom_feed = QLabel(self.primary_feed) 
+        self.zoom_feed.setFixedSize(160, 120) # 4:3 aspect ratio
+        self.zoom_feed.setStyleSheet("""
+            background-color: #1C1C1E; 
+            border: 2px solid #007AFF; /* Studio Blue for distinction */
+            border-radius: 4px;
+        """)
+        self.zoom_feed.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zoom_feed.move(330, 10)  # Position at top-right corner of
+        self.zoom_feed.setText("ZOOMED VIEW")
 
         # Log Panel
         self.log_output = QPlainTextEdit()
@@ -145,6 +284,14 @@ class ControlTab(QWidget):
         progress_group.setLayout(prog_layout)
 
         # Actions
+        self.home_start = QPushButton("HOME ROBOT")
+        self.home_start.setObjectName("btn_home")
+        self.home_start.setFixedHeight(50)
+
+        self.go_first = QPushButton("GO TO FIRST POINT")
+        self.go_first.setObjectName("btn_go_first")
+        self.go_first.setFixedHeight(50)
+
         self.btn_start = QPushButton("START SEQUENCE")
         self.btn_start.setObjectName("btn_start")
         self.btn_start.setFixedHeight(50)
@@ -156,55 +303,104 @@ class ControlTab(QWidget):
         right_panel.addWidget(self.jog_widget)
         right_panel.addWidget(progress_group)
         right_panel.addStretch()
+        right_panel.addWidget(self.home_start)
+        right_panel.addWidget(self.go_first)
         right_panel.addWidget(self.btn_start)
         right_panel.addWidget(self.btn_stop)
 
         self.main_layout.addLayout(right_panel, stretch=1)
 
-    def x_pos(self):
-        self.logger.info(f"X+ pressed {self.jog_widget.step_size}")
-        if self.gcode_controller:
-            self.gcode_controller.jog_relative(x=float(self.jog_widget.step_size))
-
-    def x_neg(self):
-        self.logger.info(f"X- pressed {self.jog_widget.step_size}")
-        if self.gcode_controller:
-            self.gcode_controller.jog_relative(x=-float(self.jog_widget.step_size))
-
-    def y_pos(self):
-        self.logger.info(f"Y+ pressed {self.jog_widget.step_size}")
-        if self.gcode_controller:
-            self.gcode_controller.jog_relative(y=float(self.jog_widget.step_size))
-
-    def y_neg(self):
-        self.logger.info(f"Y- pressed {self.jog_widget.step_size}")
-        if self.gcode_controller:
-            self.gcode_controller.jog_relative(y=-float(self.jog_widget.step_size))
-
-    def z_pos(self):
-        self.logger.info(f"Z+ pressed {self.jog_widget.step_size}")
-        if self.gcode_controller:
-            self.gcode_controller.jog_relative(z=float(self.jog_widget.step_size))
+        self.home_start.clicked.connect(self.issue_home)
+        self.go_first.clicked.connect(self.issue_first)
+        self.btn_start.clicked.connect(self.issue_soldering)
     
-    def z_neg(self):
-        self.logger.info(f"Z- pressed {self.jog_widget.step_size}")
-        if self.gcode_controller:
-            self.gcode_controller.jog_relative(z=-float(self.jog_widget.step_size))
+    def issue_first(self):
+        """Passes the UI data to the background thread."""
+        self.request_first.emit()
 
-    def btn_home_clicked(self):
-        self.logger.info("Homing robot axes...")
-        if self.gcode_controller:
-            self.gcode_controller.home()
+    def issue_jog(self, axis, direction):
+        """Passes the UI data to the background thread."""
+        step = float(self.jog_widget.step_size) * direction
+        self.request_jog.emit(axis, step)
 
-    def btn_start_clicked(self):
-        self.logger.info("START pressed")
-        if self.gcode_controller:
-            self.gcode_controller.start_sequence()
+    def issue_home(self):
+        """Issues the HOME command to the robot."""
+        self.request_home.emit()
 
+    def issue_soldering(self):
+        """Issues the START SOLDERING command to the robot."""
+        self.request_soldering.emit()
+    
+    def update_label(self, q_image):
+        """This function runs every time a new frame arrives."""
+        # Convert QImage to Pixmap and show it
+        pixmap = QPixmap.fromImage(q_image)
+        
+        # Scale to fit the label while keeping aspect ratio
+        scaled_pixmap = pixmap.scaled(
+            self.primary_feed.size(), 
+            Qt.AspectRatioMode.KeepAspectRatio, 
+            Qt.TransformationMode.SmoothTransformation
+        )
+        self.primary_feed.setPixmap(scaled_pixmap)
+        # 2. Update Zoom Feed (Cropped)
+        # Define how big the "cut" should be (smaller = higher zoom)
+        crop_w, crop_h = 100, 100 
+        
+        # Calculate center (or follow the soldering tip coordinates)
+        center_x = q_image.width() // 2
+        center_y = q_image.height() // 2
+
+        center_x = 340
+        center_y = 330
+
+        # Define the rectangle: (top-left x, top-left y, width, height)
+        rect_x = center_x - (crop_w // 2)
+        rect_y = center_y - (crop_h // 2)
+        
+        # CROP the image pixels
+        cropped_sub_image = q_image.copy(rect_x, rect_y, crop_w, crop_h)
+
+        # Convert the crop to Pixmap and scale to fit the small UI box
+        pixmap_zoom = QPixmap.fromImage(cropped_sub_image)
+        self.zoom_feed.setPixmap(pixmap_zoom.scaled(
+            self.zoom_feed.size(), 
+            Qt.AspectRatioMode.KeepAspectRatio, 
+            Qt.TransformationMode.SmoothTransformation
+        ))
+
+    ### DOES NOT WORK - USE THREADING SIGNALS INSTEAD ###
     def btn_stop_clicked(self):
         self.logger.info("CRITICAL: STOP pressed")
         if self.gcode_controller:
             self.gcode_controller.emergency_stop()
+
+
+class CameraWorker(QThread):
+    # This signal sends the processed QImage to the UI
+    frame_received = pyqtSignal(QImage)
+
+    def run(self):
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) # 0 is usually the USB camera
+        if not self.cap.isOpened():
+            logger.error("Camera could not be opened.")
+            return
+
+        while self.isRunning():
+            ret, frame = self.cap.read()
+            if ret:
+                # 1. Convert BGR (OpenCV) to RGB (Qt)
+                rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # 2. Convert to QImage
+                h, w, ch = rgb_image.shape
+                bytes_per_line = ch * w
+                qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+                
+                # 3. Send it to the UI
+                self.frame_received.emit(qt_image.copy()) 
+        
+        self.cap.release()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
