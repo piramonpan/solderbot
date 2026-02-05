@@ -15,7 +15,8 @@ HEIGHT                  = 1 # (in mm)
 LINE_FEEDRATE           = 50 # TO DO: figure out the best feedrate for soldering lines
 SCALE                   = 2.5 # distance between holes (in mm) <-- i think? need to double check
 SOLDER_TIME             = 5000 # how long the solder is held over a point (in ms)
-SOLDER_DISPENSE_RATE    = 160 # spool feed motor speed (in rpm, lowest speed: 160)
+SOLDER_DISPENSE_RATE    = 165 # spool feed motor speed (in rpm, lowest speed: 160)
+DISPENSE_TIME           = 2
 
 ############################## Helper Functions ###############################
 def list_available_ports():
@@ -257,7 +258,9 @@ def send_commands(serial_port: str, commands: list) -> None:
             time.sleep(SOLDER_TIME/1000)
         elif command == writer.start_dispensing(SOLDER_DISPENSE_RATE):
             print("dispensing")
-            time.sleep(3)
+            time.sleep(DISPENSE_TIME)
+        elif command == writer.stop_dispensing():
+            time.sleep(2)
 
     print("Soldering complete")
     
