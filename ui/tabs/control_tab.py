@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 import cv2
 from core.grbl_controller import GRBLController
+from esp32 import ESP32
 
 logger = logging.getLogger("SolderBot")
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
@@ -284,9 +285,14 @@ class ControlTab(QWidget):
         progress_group.setLayout(prog_layout)
 
         # Actions
+
         self.home_start = QPushButton("HOME ROBOT")
         self.home_start.setObjectName("btn_home")
         self.home_start.setFixedHeight(50)
+
+        self.probe_z_btn = QPushButton("PROBE Z")
+        self.probe_z_btn.setObjectName("btn_probe_z")
+        self.probe_z_btn.setFixedHeight(50)
 
         self.go_first = QPushButton("GO TO FIRST POINT")
         self.go_first.setObjectName("btn_go_first")
@@ -300,10 +306,12 @@ class ControlTab(QWidget):
         self.btn_stop.setObjectName("btn_stop")
         self.btn_stop.setFixedHeight(50)
 
+
         right_panel.addWidget(self.jog_widget)
         right_panel.addWidget(progress_group)
         right_panel.addStretch()
         right_panel.addWidget(self.home_start)
+        right_panel.addWidget(self.probe_z_btn)
         right_panel.addWidget(self.go_first)
         right_panel.addWidget(self.btn_start)
         right_panel.addWidget(self.btn_stop)
@@ -311,8 +319,29 @@ class ControlTab(QWidget):
         self.main_layout.addLayout(right_panel, stretch=1)
 
         self.home_start.clicked.connect(self.issue_home)
+        self.probe_z_btn.clicked.connect(self.issue_probe_z)
         self.go_first.clicked.connect(self.issue_first)
         self.btn_start.clicked.connect(self.issue_soldering)
+
+    def issue_probe_z(self):
+        """Placeholder for Probe Z action."""
+        print("Probe Z button pressed.")
+        esp32 = ESP32()
+        z_arm_down = esp32.move_z_arm_down()
+
+        if z_arm_down:
+            print("Z arm moved down successfully. Now probing Z...")
+            # Here you would add the logic to read the probe value and update the UI/logs accordingly.
+            probe_successful = True # Placeholder for actual probe result
+        else:
+            print("Failed to move Z arm down. Cannot probe Z.")
+
+        if probe_successful:
+            z_arm_up = esp32.move_z_arm_up()
+            if z_arm_up:
+                print("Z arm moved back up successfully after probing.")
+            else:
+                print("Failed to move Z arm back up after probing.")
     
     def issue_first(self):
         """Passes the UI data to the background thread."""
