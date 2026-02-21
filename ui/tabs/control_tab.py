@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 import cv2
 from core.grbl_controller import GRBLController
-from esp32 import ESP32
+from esp32.ESP32 import ESP32
 
 logger = logging.getLogger("SolderBot")
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
