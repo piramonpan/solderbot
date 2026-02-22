@@ -153,6 +153,8 @@ class ImageSelectorWindow(QMainWindow):
             print("No image selected.")
             self.image_path = None
 
+        return self.image_path
+
     def close_window(self):
         self.close()
 

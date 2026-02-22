@@ -7,6 +7,7 @@ class GCodeWriter:
     # -x = left
     # +y = away? (facing front)
     # -y = towards
+
     def rapid_positioning(self, x: float | None , y: float | None):
         """ Moves the end effector in a straight line in the xy-plane. This will
         move the gantry at maximum speed (as defined by the hardware) """
@@ -54,10 +55,21 @@ class GCodeWriter:
         command = 'G28.1'
         return command
     
+    def set_workspace(self):
+        command = 'G54'
+
+        return command
+    
+    def set_zero_workspace(self):
+        command = 'G10 L20 P1 X0 Y0 Z0'
+
+        return command
+    
     def reset(self):
         """ Moves end effector to reference point """
 
-        command = 'G28'
+        # command = 'G28' - moves to machine home, which may not be the same as the reference point 
+        command = 'G0 X0 Y0 Z0'
         return command
     
     def positioning(self, reference: str):
@@ -94,10 +106,12 @@ class GCodeWriter:
     def velocity_to_feedrate(self, velocity):
         return f"F{velocity:.1f}"
     
-    def home_axis(self, axis, all=False):
+    def home_axis_old(self, axis, all=False):
         """ Homes the specified axis ('x', 'y', or 'z') """
 
-        command = 'G28'
+        print("Homing axis:", axis)
+        command = 'G28 H'
+
         if all:
             return command
         if axis == 'x':
@@ -108,3 +122,13 @@ class GCodeWriter:
             command += ' Z0'
         
         return command
+    
+    def home_axis(self, axis, all=False):
+        """ Homes the specified axis ('x', 'y', or 'z') """
+
+        command = '$H'  # Homing command for GRBL
+
+        return command
+
+
+

@@ -9,13 +9,13 @@ from serial.tools import list_ports
 from core.gcodewriter import GCodeWriter as writer
 
 # constants
-PORT = "COM10"  # change to correct port
+PORT = "COM9"  # change to correct port
 BAUDRATE = 115200
-HEIGHT = 1  # (in mm)
+HEIGHT = 10  # (in mm)
 LINE_FEEDRATE = 50  # TO DO: figure out the best feedrate for soldering lines
-SCALE = 2.5  # distance between holes (in mm) <-- i think? need to double check
+SCALE = 2.54  # distance between holes (in mm) <-- i think? need to double check
 SOLDER_TIME = 5000  # how long the solder is held over a point (in ms)
-SOLDER_DISPENSE_RATE = 160  # spool feed motor speed (in rpm, lowest speed: 160)
+SOLDER_DISPENSE_RATE = 200  # spool feed motor speed (in rpm, lowest speed: 160)
 
 ############################## Helper Functions ###############################
 
@@ -160,24 +160,25 @@ class GRBLController:
                         solder
         """
         solder_list = []
-
+    
         points = json_data["points"]
-        lines = json_data["lines"]
+
+        if "lines" in json_data:
+            lines = json_data["lines"]
+
+            for line in lines:
+                start = line["start"]
+                end = line["end"]
+                solder_list.append(("line", start, end))
 
         for point in points:
-            solder_list.append(("point", point))
-
-        for line in lines:
-            start = line["start"]
-            end = line["end"]
-            solder_list.append(("line", start, end))
-
+            solder_list.append(("points", point))
         # TO DO: get corner coordinates
         # use corner coordinates to determine last column
 
         return solder_list
 
-    def generate_gcode(self, data_list: list, last_col) -> list:
+    def generate_gcode(self, data_list: list, last_col, dispense=False) -> list:
         """Generates a list of GCODE commands based on the points/lines in the
         json file. This function conducts the 'path planning'
         parameters:
@@ -186,33 +187,43 @@ class GRBLController:
         returns:
             commands: list of GCODE commands
         """
+
         commands = []
 
         # reset and go to reference point
+        # commands.append('G92X0Y0Z0')  # Set current position as zero
         commands.append(self.writer.positioning("absolute"))
+        commands.append(self.writer.set_workspace())
+        commands.append(self.writer.set_zero_workspace())
         commands.append(self.writer.reset())
 
         for col in range(0, last_col):
             for data in data_list:
                 x, y = data[1]
 
-                if x == col and data[0] == "point":
+                if x == col and data[0] == "points":
                     # move to point
                     x_coord = x * self.scale
-                    y_coord = y * self.scale
+                    if y != 0:
+                        y_coord = y * -self.scale
+                    else:  
+                        y_coord = 0
+                    
+                    commands.append(self.writer.positioning("absolute"))
                     commands.append(self.writer.rapid_positioning(x_coord, y_coord))
 
                     # lower end effector and solder
                     commands.append(
                         self.writer.move_up_down(-self.height)
-                    )  # TO DO: figure out vertical distance required
-                    commands.append(self.writer.start_dispensing(self.solder_dispense_rate))
-                    commands.append(self.writer.wait(self.solder_time))
-                    commands.append(self.writer.stop_dispensing())
-                    # commands.append(writer.retract_solder(SOLDER_DISPENSE_RATE))
+                    )
 
-                    # raise end effector once soldering is complete
-                    commands.append(self.writer.move_up_down(self.height))
+                    if dispense:
+                        commands.append(self.writer.start_dispensing(self.solder_dispense_rate))
+                        commands.append(self.writer.stop_dispensing())
+
+                    commands.append(self.writer.move_up_down(self.height)) # raise end effector
+                
+                #TODO: Make line functional 
                 elif x == col and data[0] == "line":
                     # move to point and lower end effector
                     x_coord = x * self.scale
@@ -236,11 +247,11 @@ class GRBLController:
                     # commands.append(writer.retract_solder(SOLDER_DISPENSE_RATE))
                     commands.append(self.writer.move_up_down(self.height))
 
-        commands.append(self.writer.reset())
+        commands.append(self.writer.reset()) # Move back to reference point at end
 
         return commands
 
-    def send_commands(self, commands: list) -> None:
+    def send_commands_old(self, commands: list) -> None:
         """Sends GCODE command to gantry microcontroller by writing to serial
         port.
         parameters:
@@ -270,11 +281,8 @@ class GRBLController:
                     response = self.ser.readline().decode("utf-8").strip()
                     print(f"Received response: {response}")
 
-                    # Check for the 'ok' response to know when it's safe to send the
-                    # next command. Check is skipped is command was wait
-                    if command == self.writer.wait(self.solder_time):
-                        break
-                    elif "ok" in response.lower():
+                    # Check for the 'ok' response to know when it's safe to send the next command
+                    if "ok" in response.lower():
                         break
 
                 if time.time() - start > 10:
@@ -294,27 +302,72 @@ class GRBLController:
 
         print("Soldering complete")
 
+    def send_commands(self, commands: list) -> None:
+        # FOR TESTING 
+
+        """Sends GCODE command to gantry microcontroller by writing to serial
+        port.
+        parameters:
+            serial_port: the COM port connecting the laptop to the gantry's
+                        microcontroller
+            commands: list of GCODE commands to send to microcontroller
+        returns: None
+        """
+
+        self.ser.write(b"$X\n")
+        time.sleep(0.1)
+        while self.ser.in_waiting:
+            print("Unlock:", self.ser.readline().decode().strip())
+
+        # send gcode commands
+        for command in commands:
+            
+            # unlock GRBL
+            if self.is_float(command) is False:
+                self.ser.write((command + "\n").encode())
+                print(command)
+
+                start = time.time()
+
+                while True:
+                    if self.ser.in_waiting:
+                        response = self.ser.readline().decode("utf-8").strip()
+                        print(f"Received response: {response}")
+
+                        # Check for the 'ok' response to know when it's safe to send the next command
+                        if "ok" in response.lower():
+                            break
+
+                    if time.time() - start > 10:
+                        print("Timeout waiting for response")
+                        break
+
+                # get grbl status while sending commands
+                self.poll_grbl()
+
+            # If command is a number, do not send to GRBL, but instead wait for that amount of time (used for soldering and dispensing time)
+            else:
+                time.sleep(float(command))
+
+        print("Soldering complete")
+
+    @staticmethod
+    def is_float(string_value):
+        # helper function to check if a string can be converted to a float
+        try:
+            float(string_value)
+            return True
+        except ValueError:
+            return False
+
+
     def start_soldering(self):
         """Main function to start the soldering process after loading json data """
         data = self.load_json()
         solder_list = self.format_json(data)
-        commands = self.generate_gcode(solder_list, 24)  # TO DO: change 24 to last_col
+        commands = self.generate_gcode(solder_list, 24, dispense=False)  # TO DO: change 24 to last_col
         self.send_commands(commands)
-
-    def emergency_stop(self):
-        """Sends an emergency stop command to GRBL"""
-        pass
         
-    def set_reference(self):
-        # move to initial hard coded reference point
-        ## GUI asks user if this position is correct
-        # if position is correct:
-        # command.append(writer.set_reference())
-        # else:
-        ## user moves gantry to correct reference point
-        # command.append(writer.set_reference())
-        pass
-
 if __name__ == "__main__":
     grbl = GRBLController(PORT)
     grbl.list_available_ports()

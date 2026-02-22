@@ -21,9 +21,9 @@ class SolderBotApp(QMainWindow):
         connected = self.grbl_controller.connect("COM10")
 
         if connected:
-            self.logger.info("Connected to GRBL Controller on COM7.")
+            self.logger.info("Connected to GRBL Controller on COM9.")
         else:
-            self.logger.error("Failed to connect to GRBL Controller on COM7.")
+            self.logger.error("Failed to connect to GRBL Controller on COM9.")
             self.grbl_controller = None
         
 
@@ -48,7 +48,7 @@ class SolderBotApp(QMainWindow):
         self.layout.addWidget(self.tabs)
 
         ### SETUP LOGGING ###
-        self.ui_log_handler.new_record.connect(self.control_tab.log) # when handler recieve a new log, it emit a signal and send to control tab log panel
+        # self.ui_log_handler.new_record.connect(self.control_tab.log) # when handler recieve a new log, it emit a signal and send to control tab log panel
         self.logger.info("SolderBot Application Initialized.")
 
     def set_up_sidebar(self):
