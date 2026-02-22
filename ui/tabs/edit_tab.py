@@ -5,11 +5,12 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QImage, QPixmap
 
 import sys
-from ui.tabs.edit_tab_widgets.image_selector import ImageSelectorWindow
+from ui.tabs.edit_tab_widgets.archive.image_selector import ImageSelectorWindow
 from ui.tabs.edit_tab_widgets.protoboard import ProtoBoardSceneWithLines, ProtoBoardScene
 from ui.tabs.edit_tab_widgets.add_solder import AddSolderGroup
 from PyQt6.QtCore import Qt
 import json
+from core.image_processing import ImageProcessor
 
 
 class BoardViewTab(QWidget):
@@ -67,17 +68,26 @@ class BoardViewTab(QWidget):
         self.add_solder_group.use_image_done_button.clicked.connect(self.generate_board_json)
         
     def load_image(self):
-        self.image_select_window.get_image()
-        self.image_select_window.show()
+        path = self.image_select_window.get_image()
+        self.image_processor = ImageProcessor(path)
+        self.image_processor.find_blob_center()
+        self.draw_board()
+
+        # self.image_select_window.show() # For finding corners manually, but we want to automate this eventually
 
     def draw_board(self, corners=None):
-        self.scene.draw_board(corners)
+        if corners:
+            self.scene.draw_board_old(corners)
+        else:
+            print(self.image_processor.valid_x)
+            print(self.image_processor.valid_y)
+            self.scene.draw_board(self.image_processor.cleaned_grid[:, 1].max()+1, self.image_processor.cleaned_grid[:, 0].max(), self.image_processor.valid_y, self.image_processor.valid_x)
 
     def on_image_button(self, clicked):
         self.scene.load_background()
 
     def on_image_done_button(self, clicked):
-        self.scene.draw_board()
+        self.scene.draw_board_old(self.scene.corner_points)
 
     def change_line_mode(self, clicked):
         if self.add_solder_group.add_line_button.isChecked():
