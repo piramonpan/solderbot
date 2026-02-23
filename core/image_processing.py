@@ -68,7 +68,7 @@ class ImageProcessor:
 
         # 1. Normalize and get initial grid indices
         points_np = np.array([[int(kp.pt[0]), int(kp.pt[1])] for kp in points])  # Convert keypoints to numpy array
-        pitch = 21 # Estimate the pixel distance between holes
+        pitch = 27 # Estimate the pixel distance between holes
         origin = points_np.min(axis=0)
         grid_coords = np.round((points_np - origin) / pitch).astype(int)
         print(grid_coords)
@@ -77,7 +77,7 @@ class ImageProcessor:
         y_indices = grid_coords[:, 1]
         
         # 3. Count how many holes exist in each unique Column and Row
-        unique_x, counts_x = np.unique(x_indices, return_counts=True)
+        unique_x, counts_x = np.unique(x_indices, return_counts=True)  
         unique_y, counts_y = np.unique(y_indices, return_counts=True)
         
         # 4. Create "Permitted" lists: Only keep indices that have enough holes

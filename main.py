@@ -17,8 +17,8 @@ class SolderBotApp(QMainWindow):
         self.logger, self.ui_log_handler = setup_logger()
 
         ### SETUP GCODE ###
-        self.grbl_controller = GRBLController(port="COM10") 
-        connected = self.grbl_controller.connect("COM10")
+        self.grbl_controller = GRBLController(port="COM9") 
+        connected = self.grbl_controller.connect("COM9")
 
         if connected:
             self.logger.info("Connected to GRBL Controller on COM9.")

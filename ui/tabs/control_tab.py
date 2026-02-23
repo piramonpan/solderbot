@@ -21,7 +21,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject, pyqtSlot
 from PyQt6.QtGui import QImage, QPixmap
 from core.grbl_controller import GRBLController
-from esp32.ESP32 import ESP32
+import json
+import os
+from PyQt6.QtWidgets import QMessageBox
 
 logger = logging.getLogger("SolderBot")
 
@@ -70,8 +72,8 @@ class GCodeWorker(QObject):
             Move to an estimated location of the workspace and set that as the new zero reference point.
             This is a simplified version of what could be a more complex workspace finding routine that uses the camera feed to visually identify the workspace location.
         """
-        x_val = 65
-        y_val = 107
+        x_val = 64.5
+        y_val = 105
         z_val = -20
 
         commands = []
@@ -107,7 +109,7 @@ class GCodeWorker(QObject):
             # Placeholder logic for grid navigation
             y_coord = col * -2.54 if col != 0 else 0
             x_coord = row * 2.54 if row != 0 else 0
-
+            z_coord = -10
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.set_workspace(),
@@ -136,10 +138,10 @@ class GCodeWorker(QObject):
                 self.controller.writer.set_workspace(),
                 self.controller.writer.rapid_positioning(x=x_coord, y=y_coord),
                 self.controller.writer.positioning(reference="relative"),
-                self.controller.writer.rapid_positioning(x=2, y=None),
-                self.controller.writer.move_up_down(z=-8),
-                self.controller.writer.rapid_positioning(x=-2, y=None),
-                self.controller.writer.move_up_down(z=-2)
+                self.controller.writer.rapid_positioning(x=1, y=None),
+                self.controller.writer.move_up_down(z=-9),
+                self.controller.writer.rapid_positioning(x=-1, y=None),
+                self.controller.writer.move_up_down(z=-1)
             ]
             self.controller.send_commands(commands=commands)
 
@@ -192,8 +194,8 @@ class GCodeWorker(QObject):
                 str(extrude_time),
                 self.controller.writer.stop_dispensing(),
                 str(hold_time),
-                # self.controller.writer.positioning(reference="relative"),
-                # self.controller.writer.move_up_down(z=10)
+                #self.controller.writer.positioning(reference="relative"),
+                #self.controller.writer.move_up_down(z=10)
             ]
             self.controller.send_commands(commands=commands)
         except Exception as e:
@@ -302,9 +304,9 @@ class JogControlPanel(QWidget):
         self.spin_row = QSpinBox()
         self.spin_row.setRange(0, 100)
         self.btn_grid_go = QPushButton("GO")
-        grid_nav_layout.addWidget(QLabel("Col:"))
-        grid_nav_layout.addWidget(self.spin_col)
         grid_nav_layout.addWidget(QLabel("Row:"))
+        grid_nav_layout.addWidget(self.spin_col)
+        grid_nav_layout.addWidget(QLabel("Col:"))
         grid_nav_layout.addWidget(self.spin_row)
         grid_nav_layout.addWidget(self.btn_grid_go)
         grid_nav_group.setLayout(grid_nav_layout)
@@ -426,17 +428,8 @@ class ControlTab(QWidget):
         self.btn_extrude = QPushButton("EXTRUDE")
         self.btn_stop_extrude = QPushButton("STOP EXTRUDE")
         self.home_start = QPushButton("HOME ROBOT")
-        self.home_start.setObjectName("btn_home")
-        self.home_start.setFixedHeight(50)
-
-        self.probe_z_btn = QPushButton("PROBE Z")
-        self.probe_z_btn.setObjectName("btn_probe_z")
-        self.probe_z_btn.setFixedHeight(50)
-
-        self.go_first = QPushButton("GO TO FIRST POINT")
-        self.go_first.setObjectName("btn_go_first")
-        self.go_first.setFixedHeight(50)
-
+        #self.btn_probe_z = QPushButton("PROBE Z")
+        self.start_soldering_sequence = QPushButton("START SOLDERING SEQUENCE")
         self.go_first = QPushButton("FIND WORKSPACE")
         self.btn_set_zero = QPushButton("SET ZERO WORKSPACE")  # NEW
         self.btn_return_start = QPushButton("RETURN TO FIRST SPOT")  # NEW
@@ -445,6 +438,7 @@ class ControlTab(QWidget):
 
         for btn in [
             self.home_start,
+            self.start_soldering_sequence,
             self.go_first,
             self.btn_set_zero,
             self.btn_return_start,
@@ -459,7 +453,8 @@ class ControlTab(QWidget):
         right_panel.addWidget(self.btn_extrude)
         right_panel.addWidget(self.btn_stop_extrude)
         right_panel.addWidget(self.home_start)
-        right_panel.addWidget(self.probe_z_btn)
+        right_panel.addWidget(self.start_soldering_sequence)
+        #right_panel.addWidget(self.btn_probe_z)
         right_panel.addWidget(self.go_first)
         right_panel.addWidget(self.btn_set_zero)
         right_panel.addWidget(self.btn_return_start)
@@ -487,38 +482,12 @@ class ControlTab(QWidget):
         # Action Buttons
         self.btn_extrude.clicked.connect(self.extrude_button_clicked)
         self.home_start.clicked.connect(self.home_button_clicked)
+        self.start_soldering_sequence.clicked.connect(self.start_soldering_sequence_clicked)
+        #self.btn_probe_z.clicked.connect(self.probe_z_clicked)
         self.go_first.clicked.connect(self.find_workspace_button_clicked)
         self.btn_stop_extrude.clicked.connect(self.stop_extrude_button_clicked)
 
         self.btn_start.clicked.connect(lambda: self.request_soldering.emit())
-        self.home_start.clicked.connect(self.issue_home)
-        self.probe_z_btn.clicked.connect(self.issue_probe_z)
-        self.go_first.clicked.connect(self.issue_first)
-        self.btn_start.clicked.connect(self.issue_soldering)
-
-    def issue_probe_z(self):
-        """Placeholder for Probe Z action."""
-        print("Probe Z button pressed.")
-        esp32 = ESP32()
-        z_arm_down = esp32.move_z_arm_down()
-
-        if z_arm_down:
-            print("Z arm moved down successfully. Now probing Z...")
-            # Here you would add the logic to read the probe value and update the UI/logs accordingly.
-            probe_successful = True # Placeholder for actual probe result
-        else:
-            print("Failed to move Z arm down. Cannot probe Z.")
-
-        if probe_successful:
-            z_arm_up = esp32.move_z_arm_up()
-            if z_arm_up:
-                print("Z arm moved back up successfully after probing.")
-            else:
-                print("Failed to move Z arm back up after probing.")
-    
-    def issue_first(self):
-        """Passes the UI data to the background thread."""
-        self.request_first.emit()
 
     def issue_jog(self, axis, direction):
         step = float(self.jog_widget.step_size) * direction
@@ -560,6 +529,13 @@ class ControlTab(QWidget):
         self.jog_widget.setEnabled(False)
         self.request_home.emit()
 
+    def probe_z_clicked(self):
+        print("Probing Z height...")
+        # This is a placeholder. You would implement the actual probing logic here.
+        # For example, you might send a G38.2 command to probe the Z axis and then read the result.
+        # self.request_probe_z.emit()
+        pass
+
     def extrude_button_clicked(self):
         print("Extruding solder...")
         self.request_extruding.emit(True)
@@ -568,31 +544,90 @@ class ControlTab(QWidget):
         print("Stopping extruding...")
         self.request_extruding.emit(False)
 
+    def start_soldering_sequence_clicked(self):
+        print("Starting soldering sequence...")
+        board_data_path = os.path.join(os.path.dirname(__file__), '../../board_data.json')
+        board_data_path = os.path.abspath(board_data_path)
+        try:
+            with open(board_data_path, 'r') as f:
+                board_data = json.load(f)
+            print("Loaded board_data.json:", board_data)
+        except Exception as e:
+            print("Error loading board_data.json:", e)
+            board_data = None
+
+        def wait_for_user(msg):
+            # for testing purposes only
+            dlg = QMessageBox()
+            dlg.setWindowTitle("Continue?")
+            dlg.setText(msg)
+            dlg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            dlg.exec()
+
+        if board_data:
+            #self.home_button_clicked()  # Ensure we start from a known position
+            #wait_for_user("Proceed after homing robot?")
+            #self.find_workspace_button_clicked()  # Move to workspace and set zero
+            time.sleep(2)
+            self.request_jog.emit("Z", 10)
+
+            for point in board_data["points"]:
+                print(point)
+                row = point[0]
+                col = point[1]
+                time.sleep(2)
+                self.worker.execute_goto_grid_2(col-1, row) # TODO: Hard coded please fix later :)
+                time.sleep(2)
+                self.worker.execute_custom_solder_2(extrude_time=0.6, hold_time=3)  # Extrude and solder
+                time.sleep(2)
+                self.request_jog.emit("Z", 10)
+                wait_for_user("Ready for next point? Press OK to continue.")
+
+import cv2
+import time
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtGui import QImage
 
 class CameraWorker(QThread):
     frame_received = pyqtSignal(QImage)
 
     def run(self):
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Adjust index as needed
-
+        # 1. Initialize capture
+        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
 
         while self.isRunning():
-
             ret, frame = cap.read()
-
             if ret:
+                # 2. Define center based on actual frame size
+                h, w, ch = frame.shape
+                center = ((w // 2) + 258, (h // 2)+23)
+                radius = 10
+                color = (0, 0, 255)  # BGR Red
+                thickness = 2
 
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # 3. DRAW FIRST (on the NumPy array)
+                cv2.circle(frame, center, radius, color, thickness)
 
-                h, w, ch = rgb.shape
+                # 4. CONVERT SECOND (BGR to RGB for Qt)
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                qt_img = QImage(rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
+                # 5. Create QImage
+                bytes_per_line = ch * w
+                qt_img = QImage(
+                    rgb_frame.data, 
+                    w, 
+                    h, 
+                    bytes_per_line, 
+                    QImage.Format.Format_RGB888
+                )
 
+                # Emit a copy to ensure the memory stays valid in the main thread
                 self.frame_received.emit(qt_img.copy())
 
-            time.sleep(0.03)
+            # Adjust sleep to hit roughly 30 FPS
+            time.sleep(0.01)
 
         cap.release()
 

@@ -126,12 +126,12 @@ class BoardViewTab(QWidget):
         lines_index = zip(start_lines_index, end_lines_index)
         
         data = {
-            "corner_camera_pixel": {
-                "top_left": corners[0],
-                "top_right": corners[1],
-                "bottom_left": corners[2],
-                "bottom_right": corners[3]
-            },
+            # "corner_camera_pixel": {
+            #     "top_left": corners[0],
+            #     "top_right": corners[1],
+            #     "bottom_left": corners[2],
+            #     "bottom_right": corners[3]
+            # },
             "points": points_index,
             "lines": [{"start": start, "end": end} for start, end in lines_index]
         }
