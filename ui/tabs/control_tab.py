@@ -72,9 +72,9 @@ class GCodeWorker(QObject):
             Move to an estimated location of the workspace and set that as the new zero reference point.
             This is a simplified version of what could be a more complex workspace finding routine that uses the camera feed to visually identify the workspace location.
         """
-        x_val = 64.5
+        x_val = 65.5
         y_val = 105
-        z_val = -20
+        z_val = -24
 
         commands = []
 
@@ -546,7 +546,7 @@ class ControlTab(QWidget):
 
     def start_soldering_sequence_clicked(self):
         print("Starting soldering sequence...")
-        board_data_path = os.path.join(os.path.dirname(__file__), '../../board_data.json')
+        board_data_path = os.path.join(os.path.dirname(__file__), '../../board_data_demo.json')
         board_data_path = os.path.abspath(board_data_path)
         try:
             with open(board_data_path, 'r') as f:
@@ -581,7 +581,7 @@ class ControlTab(QWidget):
                 self.worker.execute_custom_solder_2(extrude_time=0.6, hold_time=3)  # Extrude and solder
                 time.sleep(2)
                 self.request_jog.emit("Z", 10)
-                wait_for_user("Ready for next point? Press OK to continue.")
+                time.sleep(2)
 
 import cv2
 import time
