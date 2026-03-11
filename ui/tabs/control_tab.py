@@ -24,6 +24,8 @@ from core.grbl_controller import GRBLController
 import json
 import os
 from PyQt6.QtWidgets import QMessageBox
+from esp32.ESP32 import ESP32
+import re
 
 logger = logging.getLogger("SolderBot")
 
@@ -355,6 +357,7 @@ class ControlTab(QWidget):
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(25)
+        self.esp32 = ESP32()
         self.init_ui()
 
         # Threads
@@ -428,7 +431,7 @@ class ControlTab(QWidget):
         self.btn_extrude = QPushButton("EXTRUDE")
         self.btn_stop_extrude = QPushButton("STOP EXTRUDE")
         self.home_start = QPushButton("HOME ROBOT")
-        #self.btn_probe_z = QPushButton("PROBE Z")
+        self.btn_probe_z = QPushButton("PROBE Z")
         self.start_soldering_sequence = QPushButton("START SOLDERING SEQUENCE")
         self.go_first = QPushButton("FIND WORKSPACE")
         self.btn_set_zero = QPushButton("SET ZERO WORKSPACE")  # NEW
@@ -454,7 +457,7 @@ class ControlTab(QWidget):
         right_panel.addWidget(self.btn_stop_extrude)
         right_panel.addWidget(self.home_start)
         right_panel.addWidget(self.start_soldering_sequence)
-        #right_panel.addWidget(self.btn_probe_z)
+        right_panel.addWidget(self.btn_probe_z)
         right_panel.addWidget(self.go_first)
         right_panel.addWidget(self.btn_set_zero)
         right_panel.addWidget(self.btn_return_start)
@@ -483,7 +486,7 @@ class ControlTab(QWidget):
         self.btn_extrude.clicked.connect(self.extrude_button_clicked)
         self.home_start.clicked.connect(self.home_button_clicked)
         self.start_soldering_sequence.clicked.connect(self.start_soldering_sequence_clicked)
-        #self.btn_probe_z.clicked.connect(self.probe_z_clicked)
+        self.btn_probe_z.clicked.connect(self.probe_z_clicked)
         self.go_first.clicked.connect(self.find_workspace_button_clicked)
         self.btn_stop_extrude.clicked.connect(self.stop_extrude_button_clicked)
 
@@ -527,13 +530,46 @@ class ControlTab(QWidget):
         self.btn_return_start.setEnabled(False)
         self.btn_set_zero.setEnabled(False)
         self.jog_widget.setEnabled(False)
+
+        # move z arm down to avoid collision
+        self.esp32.move_z_arm_down()
+
         self.request_home.emit()
 
     def probe_z_clicked(self):
         print("Probing Z height...")
-        # This is a placeholder. You would implement the actual probing logic here.
-        # For example, you might send a G38.2 command to probe the Z axis and then read the result.
-        # self.request_probe_z.emit()
+        #self.esp32.move_z_arm_down()
+        x_val = 142
+        y_val = 47
+        commands = [self.worker.controller.writer.positioning(reference="relative"),
+                    self.worker.controller.writer.rapid_positioning(x=x_val, y=y_val)]
+        
+        self.worker.controller.send_commands(commands=commands)
+        
+        self.wait_for_user("ahhh")
+
+        if not self.worker:
+            return
+        self.worker.log_requested.emit("Probing Z height...")
+        try:
+            command = self.worker.controller.writer.probe_z()
+            self.worker.controller.send_commands(commands=[command])
+        except Exception as e:
+            self.worker.log_requested.emit(f"G-Code Error: {str(e)}")
+        
+        time.sleep(0.5)
+
+        raw_data = self.worker.controller.poll_grbl()
+        match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
+        print(match)
+        
+        if match:
+            # The third capturing group is our Z value
+            z_val = float(match.group(3))
+        print("Probed Z value:", z_val)
+        self.request_jog.emit("Z", 10)
+        time.sleep(1)
+        self.esp32.move_z_arm_up()
         pass
 
     def extrude_button_clicked(self):
@@ -556,14 +592,6 @@ class ControlTab(QWidget):
             print("Error loading board_data.json:", e)
             board_data = None
 
-        def wait_for_user(msg):
-            # for testing purposes only
-            dlg = QMessageBox()
-            dlg.setWindowTitle("Continue?")
-            dlg.setText(msg)
-            dlg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            dlg.exec()
-
         if board_data:
             #self.home_button_clicked()  # Ensure we start from a known position
             #wait_for_user("Proceed after homing robot?")
@@ -582,6 +610,14 @@ class ControlTab(QWidget):
                 time.sleep(2)
                 self.request_jog.emit("Z", 10)
                 time.sleep(2)
+
+    def wait_for_user(self, msg):
+            # for testing purposes only
+            dlg = QMessageBox()
+            dlg.setWindowTitle("Continue?")
+            dlg.setText(msg)
+            dlg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            dlg.exec()
 
 import cv2
 import time

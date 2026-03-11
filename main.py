@@ -17,8 +17,8 @@ class SolderBotApp(QMainWindow):
         self.logger, self.ui_log_handler = setup_logger()
 
         ### SETUP GCODE ###
-        self.grbl_controller = GRBLController(port="COM9") 
-        connected = self.grbl_controller.connect("COM9")
+        self.grbl_controller = GRBLController(port="COM3") 
+        connected = self.grbl_controller.connect("COM3")
 
         if connected:
             self.logger.info("Connected to GRBL Controller on COM9.")
@@ -26,7 +26,6 @@ class SolderBotApp(QMainWindow):
             self.logger.error("Failed to connect to GRBL Controller on COM9.")
             self.grbl_controller = None
         
-
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QHBoxLayout(self.central_widget)
