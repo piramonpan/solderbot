@@ -3,8 +3,7 @@ from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsPixmapItem,
     QGraphicsItem,
-    QGraphicsLineItem,
-    QGraphicsRectItem
+    QGraphicsLineItem
 )
 from PyQt6.QtGui import QPen, QColor, QBrush, QPixmap
 from PyQt6.QtCore import Qt
@@ -24,7 +23,6 @@ class ProtoBoardScene(QGraphicsScene):
         self.cols = 0
         self.hole_spacing = 20  # pixels between holes
         self.hole_radius = 3
-        self.corner_points = [[]]
         self.image_item = None
 
         self.holes = []
@@ -64,44 +62,7 @@ class ProtoBoardScene(QGraphicsScene):
         self.image_item.setZValue(0)  # background layer
         self.addItem(self.image_item)
 
-    def draw_board_old(self, corners=None):
-        self.clear()
-
-        if corners:
-            self.corner_points = corners
-
-        if self.corner_points is None:
-            print("No corners!!")
-            return
-
-        self.row, self.col = self.calculate_rows_cols()
-
-        self.col = 24
-        self.row = 9
-
-        # Draw a simple rectangular grid for now
-        for i in range(self.row):
-            for j in range(self.col):
-                x = j * self.hole_spacing
-                y = i * self.hole_spacing
-                hole = QGraphicsEllipseItem(
-                    x - self.hole_radius,
-                    y - self.hole_radius,
-                    4 * self.hole_radius,
-                    4 * self.hole_radius,
-                )
-
-                hole.setPen(QPen(Qt.GlobalColor.black, 1.2))
-                no_brush = QBrush(Qt.BrushStyle.NoBrush)
-                hole.setBrush(no_brush)
-                hole.setZValue(1)
-                self.addItem(hole)
-
-                self.holes.append([hole.rect().center().x(), hole.rect().center().y()])
-
     def draw_board(self, num_rows, num_cols, valid_rows, valid_cols):
-        print("valid_rows:", valid_rows)
-        print("valid_cols:", valid_cols)
         self.clear()
 
         self.row = num_rows
@@ -125,58 +86,8 @@ class ProtoBoardScene(QGraphicsScene):
 
                 if j in valid_cols and i in valid_rows:
                     self.addItem(hole)
-                    self.holes.append([hole.rect().center().x(), hole.rect().center().y()])
-
-        # add rectangle around holes - kind of wonky so commented out for now
-        # min_r, max_r = min(valid_rows), max(valid_rows)
-        # min_c, max_c = min(valid_cols), max(valid_cols)
-        #     # 3. Calculate Rectangle Dimensions
-        # # Start at the first valid hole, end at the last
-        # rect_x = min_c * self.hole_spacing - (self.hole_spacing / 2)
-        # rect_y = min_r * self.hole_spacing - (self.hole_spacing / 2)
-        
-        # width = (max_c - min_c + 1) * self.hole_spacing
-        # height = (max_r - min_r + 1) * self.hole_spacing
-
-        # # 4. Create and add the Rounded Rectangle
-        # padding = 10 # Extra breathing room
-        # border_rect = QGraphicsRectItem(
-        #     rect_x - padding, 
-        #     rect_y - padding, 
-        #     width + (2 * padding), 
-        #     height + (2 * padding)
-        # )
-        
-        # # Styling the rectangle
-        # pen = QPen(Qt.GlobalColor.black, 2)
-        # border_rect.setPen(pen)
-        # border_rect.setBrush(QBrush(QColor(240, 240, 240, 100))) # Light gray, semi-transparent
-        
-        # # Set the rounding (adjust 10 to change how 'round' it looks)
-        # border_rect.setRect(border_rect.rect()) # Ensure rect is set
-        # # Note: In some PyQt versions, you use QPainterPath for complex rounding, 
-        # # but for simple Rects, we can use the following:
-        
-        # # To get rounded corners in QGraphicsRectItem, we usually use a Path or 
-        # # set the radius if using a custom paint, but the simplest 'cheat' is:
-        # # Adding a separate rounded rect item or using:
-        # self.addItem(border_rect)
-        # border_rect.setZValue(0) # Put it behind the holes
-
-    def calculate_rows_cols(self):
-
-        if self.corner_points:
-            row = round(
-                (self.corner_points[3][1] - self.corner_points[0][1]) / PIXEL_TO_MM
-            )
-            col = round(
-                (self.corner_points[1][0] - self.corner_points[0][0]) / PIXEL_TO_MM
-            )
-
-            return row, col
-
-        else:
-            return 0, 0
+                
+                self.holes.append([hole.rect().center().x(), hole.rect().center().y()])
 
 class ProtoBoardSceneWithLines(ProtoBoardScene):
     def __init__(self, parent=None):
@@ -197,6 +108,10 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             pos = event.scenePos()  # position in scene coordinates
 
             hole_x, hole_y = self.find_closest_hole(pos.x(), pos.y())
+            
+            if (hole_x, hole_y) in self.points:
+                print(f"Point already exist ({hole_x}, {hole_y})")
+                return
 
             # Draw a small circle at the click
             circle = QGraphicsEllipseItem(

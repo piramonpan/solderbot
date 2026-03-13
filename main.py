@@ -17,8 +17,8 @@ class SolderBotApp(QMainWindow):
         self.logger, self.ui_log_handler = setup_logger()
 
         ### SETUP GCODE ###
-        self.grbl_controller = GRBLController(port="COM3") 
-        connected = self.grbl_controller.connect("COM3")
+        self.grbl_controller = GRBLController(port="COM6") 
+        connected = self.grbl_controller.connect("COM6")
 
         if connected:
             self.logger.info("Connected to GRBL Controller on COM9.")
@@ -90,8 +90,6 @@ class SolderBotApp(QMainWindow):
 
     
     def closeEvent(self, event):
-        # self.gcode_thread.quit()
-        # self.gcode_thread.wait()
         event.accept()
         pass
 

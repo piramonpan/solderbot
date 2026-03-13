@@ -1,16 +1,24 @@
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QGraphicsView, QComboBox, QGroupBox, QLabel
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QGraphicsView,
+    QGroupBox,
+    QLabel,
 )
 from PyQt6.QtGui import QImage, QPixmap
-
 import sys
-from ui.tabs.edit_tab_widgets.archive.image_selector import ImageSelectorWindow
-from ui.tabs.edit_tab_widgets.protoboard import ProtoBoardSceneWithLines, ProtoBoardScene
+from ui.tabs.edit_tab_widgets.image_selector import ImagePopUp
+from ui.tabs.edit_tab_widgets.protoboard import ProtoBoardSceneWithLines
 from ui.tabs.edit_tab_widgets.add_solder import AddSolderGroup
-from PyQt6.QtCore import Qt
 import json
 from core.image_processing import ImageProcessor
+import cv2
+from PyQt6.QtCore import Qt
+
+IMG_PATH = r"C:\Users\piram\Desktop\opencv_test\images\TEST_10.jpg"
 
 
 class BoardViewTab(QWidget):
@@ -20,13 +28,16 @@ class BoardViewTab(QWidget):
         self.init_ui()
 
     def init_ui(self):
+        self.popup = ImagePopUp()
+
+        self.popup.camera_thread.image_captured_signal.connect(
+            self.transition_to_selector
+        )
+        self.popup.page_cal.btn_next.clicked.connect(self.go_to_selector)
+
         # Main vertical layout
         main_layout = QVBoxLayout()
 
-        
-        # -----------------------
-        # Horizontal layout: GraphicsView + right-side controls
-        # -----------------------
         content_layout = QHBoxLayout()
         # GraphicsView for protoboard display
         self.scene = ProtoBoardSceneWithLines()
@@ -40,7 +51,7 @@ class BoardViewTab(QWidget):
 
         self.image_group = DisplayImageGroup()
         side_layout.addWidget(self.image_group)
-        # Sodler group 
+        # Sodler group
         self.add_solder_group = AddSolderGroup()
 
         # Add widgets to side layout
@@ -55,39 +66,26 @@ class BoardViewTab(QWidget):
         # Set layout
         self.setLayout(main_layout)
 
-        self.image_select_window = ImageSelectorWindow()
-        
-        # SIGNALS 
-        self.image_group.take_image.clicked.connect(self.load_image)
-        self.image_select_window.ok_button.clicked.connect(lambda: self.image_group.display_image(self.image_select_window.image_path))
-
-        self.image_select_window.view.corners_selected_signal.connect(self.draw_board)
+        # SIGNALS
+        self.image_group.take_image.clicked.connect(self.show_camera_popup)
         self.add_solder_group.add_line_button.clicked.connect(self.change_line_mode)
         self.add_solder_group.add_point_button.clicked.connect(self.change_point_mode)
+        self.popup.page_sel.btn_confirm.clicked.connect(self.save_first_hole_pixel)
 
-        self.add_solder_group.use_image_done_button.clicked.connect(self.generate_board_json)
-        
-    def load_image(self):
-        path = self.image_select_window.get_image()
-        self.image_processor = ImageProcessor(path)
-        self.image_processor.find_blob_center()
-        self.draw_board()
+        self.add_solder_group.use_image_done_button.clicked.connect(
+            self.generate_board_json
+        )
 
-        # self.image_select_window.show() # For finding corners manually, but we want to automate this eventually
-
-    def draw_board(self, corners=None):
-        if corners:
-            self.scene.draw_board_old(corners)
-        else:
-            print(self.image_processor.valid_x)
-            print(self.image_processor.valid_y)
-            self.scene.draw_board(self.image_processor.cleaned_grid[:, 1].max()+1, self.image_processor.cleaned_grid[:, 0].max(), self.image_processor.valid_y, self.image_processor.valid_x)
+    def draw_board(self):
+        self.scene.draw_board(
+            self.image_processor.cleaned_grid[:, 1].max() + 1,
+            self.image_processor.cleaned_grid[:, 0].max(),
+            self.image_processor.valid_y,
+            self.image_processor.valid_x,
+        )
 
     def on_image_button(self, clicked):
         self.scene.load_background()
-
-    def on_image_done_button(self, clicked):
-        self.scene.draw_board_old(self.scene.corner_points)
 
     def change_line_mode(self, clicked):
         if self.add_solder_group.add_line_button.isChecked():
@@ -114,26 +112,33 @@ class BoardViewTab(QWidget):
         points: list of tuples/lists [(x1, y1), (x2, y2), ...]
         lines: list of tuples of start/end points: [((x1,y1),(x2,y2)), ...]
         """
-
-        corners = self.scene.corner_points
         points = self.scene.points
         start_lines = self.scene.start_lines
         end_lines = self.scene.end_lines
 
         points_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in points]
-        start_lines_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in start_lines]
-        end_lines_index = [list(self.calculate_hole_number(x=x, y=y)) for x, y in end_lines]
+        start_lines_index = [
+            list(self.calculate_hole_number(x=x, y=y)) for x, y in start_lines
+        ]
+        end_lines_index = [
+            list(self.calculate_hole_number(x=x, y=y)) for x, y in end_lines
+        ]
         lines_index = zip(start_lines_index, end_lines_index)
-        
+
         data = {
-            # "corner_camera_pixel": {
-            #     "top_left": corners[0],
-            #     "top_right": corners[1],
-            #     "bottom_left": corners[2],
-            #     "bottom_right": corners[3]
-            # },
+            "camera_pixel_zero": (
+                self.image_processor.pixel_home.tolist()
+                if hasattr(self.image_processor.pixel_home, "tolist")
+                else self.image_processor.pixel_home
+            ),
+            "pixel_mm_ratio": self.image_processor.pixel_mm_ratio,
+            "first_hole": (
+                self.image_processor.first_hole_pixel.tolist()
+                if hasattr(self.image_processor.first_hole_pixel, "tolist")
+                else self.image_processor.first_hole_pixel
+            ),
             "points": points_index,
-            "lines": [{"start": start, "end": end} for start, end in lines_index]
+            "lines": [{"start": start, "end": end} for start, end in lines_index],
         }
 
         # Save JSON
@@ -144,42 +149,81 @@ class BoardViewTab(QWidget):
 
     def calculate_hole_number(self, x, y):
         x_num = int((x - 3) / 20) + 1
-        y_num = int((y -3) / 20) + 1
+        y_num = int((y - 3) / 20) + 1
 
-        return x_num, y_num
+        return y_num, x_num
 
-class BoardControlGroup(QGroupBox):
-    # DONT NEED THIS YET....# 
-    """Styled group box for board manipulation controls."""
-    def __init__(self, parent=None):
-        super().__init__("", parent)  # No title
-        self.setFlat(True)  # No border frame
+    def show_camera_popup(self):
+        self.popup.stack.setCurrentIndex(0)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(6, 6, 6, 6)
+        if self.popup.stack.currentIndex() == 0:
+            self.popup.camera_thread.capture_requested = False
 
-        # Delete Column button
-        self.delete_column_btn = QPushButton("Delete Column")
-        self.delete_column_btn.setFixedSize(140, 40)
-        self.delete_column_btn.setStyleSheet(self._button_style())
+            # 2. Reset the viewfinder label so it doesn't show the old 'freeze' frame
+            self.popup.page_cam.video_sink.clear()
+            self.popup.page_cam.video_sink.setText("Starting Live Feed...")
+            self.popup.camera_thread.is_paused = (
+                False  # Unpause the thread to start emitting frames
+            )
+            
+            QApplication.processEvents()
+            print("Camera Page Active: Resuming stream.")
+        else:
+            # When leaving the camera page, we can stop the lens from showing up
+            self.popup.page_sel.view.lens.hide()
 
-        # Delete Row button
-        self.delete_row_btn = QPushButton("Delete Row")
-        self.delete_row_btn.setFixedSize(140, 40)
-        # Type ComboBox
-        self.type_combobox = QComboBox()
-        self.type_combobox.addItems(["TYPE 1", "TYPE 2", "TYPE 3"])
-        self.type_combobox.setFixedWidth(140)
+        self.popup.show()  # .exec_() makes it a "modal" popup (stays on top)
 
-        layout.addWidget(self.delete_column_btn)
-        layout.addWidget(self.delete_row_btn)
-        layout.addWidget(self.type_combobox)
-        layout.addStretch(1)
+    def closeEvent(self, event):
+        print("SolderBot shutting down...")
 
+        # self.take_image_thread.stop()
+
+        self.popup.close()
+
+        # 3. Clean up OpenCV (Final safety check)
+        cv2.destroyAllWindows()
+
+        # Accept the event to allow the window to close
+        event.accept()
+
+    def transition_to_selector(self, cv_frame):
+        rgb_frame = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
+
+        #### IMAGE PROCESSING
+        ##### TODO: HARDCODED FOR TESTING ####
+        self.cv_frame = cv2.imread(
+            IMG_PATH
+        )  # Convert path to cv_frame for now, but we want to skip this step eventually
+
+        self.image_processor = ImageProcessor(self.cv_frame)
+        # Run your orange marker detection here
+        self.image_processor.find_pixel_locations()
+        self.image_processor.find_blob_center()
+
+        #### REUTRN RGB FRAME WITH MARKERS DRAWN ON IT
+        self.popup.page_cal.update_preview(self.image_processor.image_copy)
+        self.popup.stack.setCurrentIndex(1)
+
+
+    def go_to_selector(self):
+        # Step 2: Pass frame to Selector Page
+        if self.cv_frame is not None:
+            rgb_frame = cv2.cvtColor(self.cv_frame, cv2.COLOR_BGR2RGB)
+            self.popup.page_sel.view.load_from_ndarray(rgb_frame)
+            self.popup.stack.setCurrentIndex(2)
+
+    def save_first_hole_pixel(self):
+        if self.image_processor:
+            self.image_processor.first_hole_pixel = self.popup.page_sel.first_hole_pixel()
+            print(f"First hole pixel set to: {self.image_processor.first_hole_pixel}")
+
+            self.image_processor.find_valleys(self.image_processor.keypoints)  # Re-run valley finding with updated first hole pixel
+            self.draw_board()  # Redraw board with updated hole positions
 
 class DisplayImageGroup(QGroupBox):
     """Styled group box for displaying the board image."""
+
     def __init__(self, parent=None):
         super().__init__("", parent)  # No title
 
@@ -188,7 +232,7 @@ class DisplayImageGroup(QGroupBox):
         self.layout1.setContentsMargins(6, 6, 6, 6)
 
         self.setup_ui()
-    
+
     def setup_ui(self):
 
         self.small_image_frame = QLabel()
@@ -198,19 +242,24 @@ class DisplayImageGroup(QGroupBox):
         self.take_image.setObjectName("take_image")
         self.take_image.setFixedSize(120, 40)
 
-        self.layout1.addWidget(self.small_image_frame, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.layout1.addWidget(
+            self.small_image_frame, alignment=Qt.AlignmentFlag.AlignCenter
+        )
         self.layout1.addWidget(self.take_image, alignment=Qt.AlignmentFlag.AlignCenter)
 
     def display_image(self, image_path):
         image = QImage(image_path)
         pixmap = QPixmap.fromImage(image)
-        scaled_pixmap = pixmap.scaled(self.small_image_frame.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        scaled_pixmap = pixmap.scaled(
+            self.small_image_frame.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
         self.small_image_frame.setPixmap(scaled_pixmap)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = BoardViewTab()
     window.show()
     sys.exit(app.exec())
-
-

@@ -37,6 +37,24 @@ class GCodeWorker(QObject):
         super().__init__()
         self.controller = gcode_controller
 
+    @pyqtSlot(float, float)
+    def execute_pan_test(self, x, y):
+    # Go to a point relative to workspace that we set to zero
+        if not self.controller:
+            return
+        self.log_requested.emit(f"Testing pan move to X:{x} Y:{y}")
+        print(f"DEBUGGGG {y}")
+        try:
+            commands = [
+                self.controller.writer.positioning(reference="absolute"),
+                self.controller.writer.set_workspace(),
+                self.controller.writer.rapid_positioning(x=x, y=y),
+            ]
+            self.controller.send_commands(commands=commands)
+        except Exception as e:
+            print("ERROR IN PAN TEST:", str(e))
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
+
     @pyqtSlot(str, float)
     def execute_jog(self, axis, step_size):
         if not self.controller:
@@ -77,6 +95,9 @@ class GCodeWorker(QObject):
         x_val = 65.5
         y_val = 105
         z_val = -24
+        x_val = 59
+        y_val = 112.5
+        z_val = -30
 
         commands = []
 
@@ -349,6 +370,7 @@ class ControlTab(QWidget):
     request_custom_solder = pyqtSignal(float, float)
     request_return_start = pyqtSignal()
     request_extruding = pyqtSignal(bool)
+    request_first_hole_pan = pyqtSignal(float, float)
 
     def __init__(self, logger=logger, gcode_controller=None, testing=True):
         super().__init__()
@@ -382,6 +404,7 @@ class ControlTab(QWidget):
                 self.worker.execute_set_zero_workspace
             )
             self.request_extruding.connect(self.worker.execute_extruding)
+            self.request_first_hole_pan.connect(self.worker.execute_pan_test)
             self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
 
             self.gcode_thread.start()
@@ -428,7 +451,7 @@ class ControlTab(QWidget):
         prog_layout.addWidget(self.status_label)
         progress_group.setLayout(prog_layout)
 
-        self.btn_extrude = QPushButton("EXTRUDE")
+        self.btn_extrude = QPushButton("PAN FIRST HOLE TEST")
         self.btn_stop_extrude = QPushButton("STOP EXTRUDE")
         self.home_start = QPushButton("HOME ROBOT")
         self.btn_probe_z = QPushButton("PROBE Z")
@@ -572,13 +595,42 @@ class ControlTab(QWidget):
         self.esp32.move_z_arm_up()
         pass
 
-    def extrude_button_clicked(self):
+    def extrude_button_clicked_old(self):
         print("Extruding solder...")
         self.request_extruding.emit(True)
+
+    def extrude_button_clicked(self):
+        print("Extruding solder...")
+        x, y = self.find_first_hole()
+        self.request_first_hole_pan.emit(x, -y)
 
     def stop_extrude_button_clicked(self):
         print("Stopping extruding...")
         self.request_extruding.emit(False)
+
+    def find_first_hole(self):
+    # PAN TESTING LOL
+        # load .json
+        with open("board_data.json", "r") as f:
+            data = json.load(f)
+
+        pixel_first_hole_x = data.get("first_hole", [0, 0])[0]
+        pixel_first_hole_y = data.get("first_hole", [0, 0])[1]
+        pixel_home_x, pixel_home_y = data.get("camera_pixel_zero", [0, 0])
+        pixel_mm_ratio = data.get("pixel_mm_ratio", 1)
+
+        print(f"First hole pixel coordinates: X={pixel_first_hole_x}, Y={pixel_first_hole_y}")
+        print(f"Camera pixel zero (home): X={pixel_home_x}, Y={pixel_home_y}")
+        print(f"Pixel to mm ratio: {pixel_mm_ratio}")
+        print("Calculating real-world coordinates for first hole...")
+
+        print(f"Calculated first hole position relative to camera zero: X={(pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio} mm, Y={(pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio} mm")
+
+        first_hole_move_x =round((pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio, 2) # round to nearest .2
+        first_hole_move_y = round((pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio, 2) # round to nearest .2
+
+        return first_hole_move_x, first_hole_move_y
+        
 
     def start_soldering_sequence_clicked(self):
         print("Starting soldering sequence...")
@@ -630,6 +682,8 @@ class CameraWorker(QThread):
     def run(self):
         # 1. Initialize capture
         cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Adjust index as needed
+
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
 
