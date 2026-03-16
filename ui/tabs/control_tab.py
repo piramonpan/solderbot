@@ -282,6 +282,17 @@ class GCodeWorker(QObject):
             self.controller.send_commands(commands=[command])
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
+    
+    @pyqtSlot()
+    def execute_clean(self):
+        if not self.controller:
+            return
+        self.log_requested.emit("Cleaning soldering iron tip...")
+        try:
+            command = self.controller.clean_tip()
+            self.controller.send_commands(commands=command)
+        except Exception as e:
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
 
 
 class JogControlPanel(QWidget):
@@ -370,6 +381,7 @@ class ControlTab(QWidget):
     request_custom_solder = pyqtSignal(float, float)
     request_return_start = pyqtSignal()
     request_extruding = pyqtSignal(bool)
+    request_clean = pyqtSignal()
     request_first_hole_pan = pyqtSignal(float, float)
 
     def __init__(self, logger=logger, gcode_controller=None, testing=True):
@@ -404,6 +416,7 @@ class ControlTab(QWidget):
                 self.worker.execute_set_zero_workspace
             )
             self.request_extruding.connect(self.worker.execute_extruding)
+            self.request_clean.connect(self.worker.execute_clean)
             self.request_first_hole_pan.connect(self.worker.execute_pan_test)
             self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
 
@@ -451,6 +464,8 @@ class ControlTab(QWidget):
         prog_layout.addWidget(self.status_label)
         progress_group.setLayout(prog_layout)
 
+        self.btn_clean = QPushButton("CLEAN")
+        self.btn_extrude = QPushButton("EXTRUDE")
         self.btn_extrude = QPushButton("PAN FIRST HOLE TEST")
         self.btn_stop_extrude = QPushButton("STOP EXTRUDE")
         self.home_start = QPushButton("HOME ROBOT")
@@ -476,6 +491,7 @@ class ControlTab(QWidget):
         right_panel.addWidget(self.jog_widget)
         # right_panel.addWidget(progress_group)
         right_panel.addStretch()
+        right_panel.addWidget(self.btn_clean)
         right_panel.addWidget(self.btn_extrude)
         right_panel.addWidget(self.btn_stop_extrude)
         right_panel.addWidget(self.home_start)
@@ -506,6 +522,7 @@ class ControlTab(QWidget):
         self.btn_return_start.clicked.connect(lambda: self.request_return_start.emit())
 
         # Action Buttons
+        self.btn_clean.clicked.connect(self.clean_button_clicked)
         self.btn_extrude.clicked.connect(self.extrude_button_clicked)
         self.home_start.clicked.connect(self.home_button_clicked)
         self.start_soldering_sequence.clicked.connect(self.start_soldering_sequence_clicked)
@@ -595,6 +612,12 @@ class ControlTab(QWidget):
         self.esp32.move_z_arm_up()
         pass
 
+    def clean_button_clicked(self):
+        print("*Cleaning soldering iron tip...")
+        self.request_clean.emit()
+        print("Extruding solder...")
+        self.request_extruding.emit(True)
+       
     def extrude_button_clicked_old(self):
         print("Extruding solder...")
         self.request_extruding.emit(True)

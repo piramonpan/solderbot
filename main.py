@@ -9,6 +9,8 @@ from core.logger import setup_logger
 from core.grbl_controller import GRBLController
 from PyQt6.QtWidgets import QSizePolicy
 
+PORT = "COM7"  # change to correct port
+
 class SolderBotApp(QMainWindow):
     def __init__(self, test_mode):
         super().__init__()
@@ -17,13 +19,13 @@ class SolderBotApp(QMainWindow):
         self.logger, self.ui_log_handler = setup_logger()
 
         ### SETUP GCODE ###
-        self.grbl_controller = GRBLController(port="COM6") 
-        connected = self.grbl_controller.connect("COM6")
+        self.grbl_controller = GRBLController(port=PORT) 
+        connected = self.grbl_controller.connect(PORT)
 
         if connected:
-            self.logger.info("Connected to GRBL Controller on COM9.")
+            self.logger.info(f"Connected to GRBL Controller on {PORT}.")
         else:
-            self.logger.error("Failed to connect to GRBL Controller on COM9.")
+            self.logger.error(f"Failed to connect to GRBL Controller on {PORT}.")
             self.grbl_controller = None
         
         self.central_widget = QWidget()
