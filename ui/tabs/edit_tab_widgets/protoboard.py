@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsPixmapItem,
     QGraphicsItem,
-    QGraphicsLineItem,
+    QGraphicsLineItem
 )
 from PyQt6.QtGui import QPen, QColor, QBrush, QPixmap
 from PyQt6.QtCore import Qt
@@ -23,7 +23,6 @@ class ProtoBoardScene(QGraphicsScene):
         self.cols = 0
         self.hole_spacing = 20  # pixels between holes
         self.hole_radius = 3
-        self.corner_points = [[]]
         self.image_item = None
 
         self.holes = []
@@ -63,19 +62,12 @@ class ProtoBoardScene(QGraphicsScene):
         self.image_item.setZValue(0)  # background layer
         self.addItem(self.image_item)
 
-    def draw_board(self, corners=None):
+    def draw_board(self, num_rows, num_cols, valid_rows, valid_cols):
         self.clear()
 
-        if corners:
-            self.corner_points = corners
+        self.row = num_rows
+        self.col = num_cols
 
-        if self.corner_points is None:
-            print("No corners!!")
-            return
-
-        self.row, self.col = self.calculate_rows_cols()
-
-        # Draw a simple rectangular grid for now
         for i in range(self.row):
             for j in range(self.col):
                 x = j * self.hole_spacing
@@ -91,24 +83,11 @@ class ProtoBoardScene(QGraphicsScene):
                 no_brush = QBrush(Qt.BrushStyle.NoBrush)
                 hole.setBrush(no_brush)
                 hole.setZValue(1)
-                self.addItem(hole)
 
+                if j in valid_cols and i in valid_rows:
+                    self.addItem(hole)
+                
                 self.holes.append([hole.rect().center().x(), hole.rect().center().y()])
-
-    def calculate_rows_cols(self):
-
-        if self.corner_points:
-            row = round(
-                (self.corner_points[3][1] - self.corner_points[0][1]) / PIXEL_TO_MM
-            )
-            col = round(
-                (self.corner_points[1][0] - self.corner_points[0][0]) / PIXEL_TO_MM
-            )
-
-            return row, col
-
-        else:
-            return 0, 0
 
 class ProtoBoardSceneWithLines(ProtoBoardScene):
     def __init__(self, parent=None):
@@ -124,29 +103,44 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
         self.add_point_mode = False
         self.add_line_mode = False
 
+        self.circle = None
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.add_point_mode:
             pos = event.scenePos()  # position in scene coordinates
 
             hole_x, hole_y = self.find_closest_hole(pos.x(), pos.y())
+            
+            if (hole_x, hole_y) in self.points:
+                print(f"Point already exist ({hole_x}, {hole_y})")
+                return
 
-            # Draw a small circle at the click
-            circle = QGraphicsEllipseItem(
-                hole_x - self.point_radius,
-                hole_y - self.point_radius,
-                self.point_radius * 2,
-                self.point_radius * 2
-            )
-            circle.setPen(QPen(Qt.GlobalColor.red, 2))
-            circle.setBrush(QBrush(QColor(255, 0, 0, 120)))
-            circle.setZValue(2)  # above protoboard
+            # check if hole is already selected
+            if (hole_x, hole_y) not in self.points:
+                # Draw a small circle at the click
+                self.circle = QGraphicsEllipseItem(
+                    hole_x - self.point_radius,
+                    hole_y - self.point_radius,
+                    self.point_radius * 2,
+                    self.point_radius * 2
+                )
+                self.circle.setPen(QPen(Qt.GlobalColor.red, 2))
+                self.circle.setBrush(QBrush(QColor(255, 0, 0, 120)))
+                self.circle.setZValue(2)  # above protoboard
 
-            self.addItem(circle)
+                self.addItem(self.circle)
 
-            # Store the point coordinates
-            self.points.append((hole_x, hole_y))
-            print(f"Point stored: ({hole_x:.1f}, {hole_y:.1f})")
+                # Store the point coordinates
+                self.points.append((hole_x, hole_y))
+                print(f"Point stored: ({hole_x:.1f}, {hole_y:.1f})")
+            else:
+                # erase circle if clicked again
+                self.removeItem(self.circle)
 
+                # remove point coordinates
+                self.points.remove((hole_x, hole_y))
+
+        # TODO: add line removal
         if event.button() == Qt.MouseButton.LeftButton and self.add_line_mode:
             pos = event.scenePos()
             self.start_x, self.start_y = self.find_closest_hole(pos.x(), pos.y()) 
