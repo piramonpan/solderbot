@@ -192,29 +192,40 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
         self.add_point_mode = False
         self.add_line_mode = False
 
+        self.circle = None
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.add_point_mode:
             pos = event.scenePos()  # position in scene coordinates
 
             hole_x, hole_y = self.find_closest_hole(pos.x(), pos.y())
 
-            # Draw a small circle at the click
-            circle = QGraphicsEllipseItem(
-                hole_x - self.point_radius,
-                hole_y - self.point_radius,
-                self.point_radius * 2,
-                self.point_radius * 2
-            )
-            circle.setPen(QPen(Qt.GlobalColor.red, 2))
-            circle.setBrush(QBrush(QColor(255, 0, 0, 120)))
-            circle.setZValue(2)  # above protoboard
+            # check if hole is already selected
+            if (hole_x, hole_y) not in self.points:
+                # Draw a small circle at the click
+                self.circle = QGraphicsEllipseItem(
+                    hole_x - self.point_radius,
+                    hole_y - self.point_radius,
+                    self.point_radius * 2,
+                    self.point_radius * 2
+                )
+                self.circle.setPen(QPen(Qt.GlobalColor.red, 2))
+                self.circle.setBrush(QBrush(QColor(255, 0, 0, 120)))
+                self.circle.setZValue(2)  # above protoboard
 
-            self.addItem(circle)
+                self.addItem(self.circle)
 
-            # Store the point coordinates
-            self.points.append((hole_x, hole_y))
-            print(f"Point stored: ({hole_x:.1f}, {hole_y:.1f})")
+                # Store the point coordinates
+                self.points.append((hole_x, hole_y))
+                print(f"Point stored: ({hole_x:.1f}, {hole_y:.1f})")
+            else:
+                # erase circle if clicked again
+                self.removeItem(self.circle)
 
+                # remove point coordinates
+                self.points.remove((hole_x, hole_y))
+
+        # TODO: add line removal
         if event.button() == Qt.MouseButton.LeftButton and self.add_line_mode:
             pos = event.scenePos()
             self.start_x, self.start_y = self.find_closest_hole(pos.x(), pos.y()) 

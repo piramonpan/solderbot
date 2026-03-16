@@ -9,7 +9,6 @@ from serial.tools import list_ports
 from core.gcodewriter import GCodeWriter as writer
 
 # constants
-PORT = "COM9"  # change to correct port
 BAUDRATE = 115200
 HEIGHT = 10  # (in mm)
 LINE_FEEDRATE = 50  # TO DO: figure out the best feedrate for soldering lines
@@ -352,7 +351,7 @@ class GRBLController:
         print("Soldering complete")
 
     @staticmethod
-    def is_float(string_value):
+    def is_float(string_value: str) -> bool:
         # helper function to check if a string can be converted to a float
         try:
             float(string_value)
@@ -361,21 +360,43 @@ class GRBLController:
             return False
 
 
-    def start_soldering(self):
+    def start_soldering(self) -> None:
         """Main function to start the soldering process after loading json data """
         data = self.load_json()
         solder_list = self.format_json(data)
         commands = self.generate_gcode(solder_list, 24, dispense=False)  # TO DO: change 24 to last_col
         self.send_commands(commands)
+
+    def clean_tip(self) -> list:
+        """ Move end effector to tip cleaning station and cleans soldering iron
+        tip """
+        commands = []
+
+        # move to cleaning station
+        commands.append(self.writer.positioning("absolute"))
+        commands.append(self.writer.move_up_down(self.height))
+        commands.append(self.writer.rapid_positioning(155, -55.0))
+        commands.append(self.writer.move_up_down(-self.height))
+
+        # move back and forth to clean
+        commands.append(self.writer.positioning("relative"))
+        for _ in range(3):
+            commands.append(self.writer.rapid_positioning(None, -15.0))
+            commands.append(self.writer.rapid_positioning(None, 15.0))
         
-if __name__ == "__main__":
-    grbl = GRBLController(PORT)
-    grbl.list_available_ports()
-    connection = grbl.connect(PORT)
+        # go back to soldering position
+        commands.append(self.writer.move_up_down(self.height))
 
-    if connection is True:
-        print(f"Successfully connected to gantry through {PORT}")
-        grbl.start_soldering()
-
-    else:
-        print(f"Unable to connect to gantry through {PORT}")
+        return commands
+        
+#if __name__ == "__main__":
+#    grbl = GRBLController(PORT)
+#    grbl.list_available_ports()
+#    connection = grbl.connect(PORT)
+#
+#    if connection is True:
+#        print(f"Successfully connected to gantry through {PORT}")
+#        grbl.start_soldering()
+#
+#    else:
+#        print(f"Unable to connect to gantry through {PORT}")

@@ -1,5 +1,7 @@
 """ This Python Class is used to translate user commands into gcode commands """
 
+from typing import Union
+
 class GCodeWriter:
     # +z = up
     # -z = down
@@ -8,7 +10,7 @@ class GCodeWriter:
     # +y = away? (facing front)
     # -y = towards
 
-    def rapid_positioning(self, x: float | None , y: float | None):
+    def rapid_positioning(self, x: Union[float, None], y: Union[float, None]):
         """ Moves the end effector in a straight line in the xy-plane. This will
         move the gantry at maximum speed (as defined by the hardware) """
 

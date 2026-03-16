@@ -259,6 +259,17 @@ class GCodeWorker(QObject):
             self.controller.send_commands(commands=[command])
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
+    
+    @pyqtSlot()
+    def execute_clean(self):
+        if not self.controller:
+            return
+        self.log_requested.emit("Cleaning soldering iron tip...")
+        try:
+            command = self.controller.clean_tip()
+            self.controller.send_commands(commands=command)
+        except Exception as e:
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
 
 
 class JogControlPanel(QWidget):
@@ -347,6 +358,7 @@ class ControlTab(QWidget):
     request_custom_solder = pyqtSignal(float, float)
     request_return_start = pyqtSignal()
     request_extruding = pyqtSignal(bool)
+    request_clean = pyqtSignal()
 
     def __init__(self, logger=logger, gcode_controller=None, testing=True):
         super().__init__()
@@ -379,6 +391,7 @@ class ControlTab(QWidget):
                 self.worker.execute_set_zero_workspace
             )
             self.request_extruding.connect(self.worker.execute_extruding)
+            self.request_clean.connect(self.worker.execute_clean)
             self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
 
             self.gcode_thread.start()
@@ -425,6 +438,7 @@ class ControlTab(QWidget):
         prog_layout.addWidget(self.status_label)
         progress_group.setLayout(prog_layout)
 
+        self.btn_clean = QPushButton("CLEAN")
         self.btn_extrude = QPushButton("EXTRUDE")
         self.btn_stop_extrude = QPushButton("STOP EXTRUDE")
         self.home_start = QPushButton("HOME ROBOT")
@@ -450,6 +464,7 @@ class ControlTab(QWidget):
         right_panel.addWidget(self.jog_widget)
         # right_panel.addWidget(progress_group)
         right_panel.addStretch()
+        right_panel.addWidget(self.btn_clean)
         right_panel.addWidget(self.btn_extrude)
         right_panel.addWidget(self.btn_stop_extrude)
         right_panel.addWidget(self.home_start)
@@ -480,6 +495,7 @@ class ControlTab(QWidget):
         self.btn_return_start.clicked.connect(lambda: self.request_return_start.emit())
 
         # Action Buttons
+        self.btn_clean.clicked.connect(self.clean_button_clicked)
         self.btn_extrude.clicked.connect(self.extrude_button_clicked)
         self.home_start.clicked.connect(self.home_button_clicked)
         self.start_soldering_sequence.clicked.connect(self.start_soldering_sequence_clicked)
@@ -526,7 +542,7 @@ class ControlTab(QWidget):
         self.go_first.setEnabled(True)
         self.btn_return_start.setEnabled(False)
         self.btn_set_zero.setEnabled(False)
-        self.jog_widget.setEnabled(False)
+        self.jog_widget.setEnabled(True)
         self.request_home.emit()
 
     def probe_z_clicked(self):
@@ -535,6 +551,10 @@ class ControlTab(QWidget):
         # For example, you might send a G38.2 command to probe the Z axis and then read the result.
         # self.request_probe_z.emit()
         pass
+
+    def clean_button_clicked(self):
+        print("*Cleaning soldering iron tip...")
+        self.request_clean.emit()
 
     def extrude_button_clicked(self):
         print("Extruding solder...")
@@ -593,7 +613,7 @@ class CameraWorker(QThread):
 
     def run(self):
         # 1. Initialize capture
-        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
 
