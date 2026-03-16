@@ -77,6 +77,7 @@ class GRBLController:
             if self.ser.in_waiting:
                 status = self.ser.readline().decode().strip()
                 print("STATUS:", status)
+                return status
 
                 if "Idle" in status:
                     return

@@ -28,7 +28,6 @@ class SolderBotApp(QMainWindow):
             self.logger.error(f"Failed to connect to GRBL Controller on {PORT}.")
             self.grbl_controller = None
         
-
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QHBoxLayout(self.central_widget)
@@ -93,8 +92,6 @@ class SolderBotApp(QMainWindow):
 
     
     def closeEvent(self, event):
-        # self.gcode_thread.quit()
-        # self.gcode_thread.wait()
         event.accept()
         pass
 

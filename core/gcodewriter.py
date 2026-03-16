@@ -132,5 +132,9 @@ class GCodeWriter:
 
         return command
 
+    def probe_z(self):
+        """ Probes the z-axis to find the height of the workpiece surface """
 
+        command = 'G38.2Z-30F100'  # Probe downwards to a maximum depth of 10mm at a feedrate of 100 mm/min
 
+        return command

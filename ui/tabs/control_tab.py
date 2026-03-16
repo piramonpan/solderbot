@@ -24,6 +24,8 @@ from core.grbl_controller import GRBLController
 import json
 import os
 from PyQt6.QtWidgets import QMessageBox
+from esp32.ESP32 import ESP32
+import re
 
 logger = logging.getLogger("SolderBot")
 
@@ -34,6 +36,24 @@ class GCodeWorker(QObject):
     def __init__(self, gcode_controller: GRBLController):
         super().__init__()
         self.controller = gcode_controller
+
+    @pyqtSlot(float, float)
+    def execute_pan_test(self, x, y):
+    # Go to a point relative to workspace that we set to zero
+        if not self.controller:
+            return
+        self.log_requested.emit(f"Testing pan move to X:{x} Y:{y}")
+        print(f"DEBUGGGG {y}")
+        try:
+            commands = [
+                self.controller.writer.positioning(reference="absolute"),
+                self.controller.writer.set_workspace(),
+                self.controller.writer.rapid_positioning(x=x, y=y),
+            ]
+            self.controller.send_commands(commands=commands)
+        except Exception as e:
+            print("ERROR IN PAN TEST:", str(e))
+            self.log_requested.emit(f"G-Code Error: {str(e)}")
 
     @pyqtSlot(str, float)
     def execute_jog(self, axis, step_size):
@@ -75,6 +95,9 @@ class GCodeWorker(QObject):
         x_val = 65.5
         y_val = 105
         z_val = -24
+        x_val = 59
+        y_val = 112.5
+        z_val = -30
 
         commands = []
 
@@ -359,6 +382,7 @@ class ControlTab(QWidget):
     request_return_start = pyqtSignal()
     request_extruding = pyqtSignal(bool)
     request_clean = pyqtSignal()
+    request_first_hole_pan = pyqtSignal(float, float)
 
     def __init__(self, logger=logger, gcode_controller=None, testing=True):
         super().__init__()
@@ -367,6 +391,7 @@ class ControlTab(QWidget):
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(25)
+        self.esp32 = ESP32()
         self.init_ui()
 
         # Threads
@@ -392,6 +417,7 @@ class ControlTab(QWidget):
             )
             self.request_extruding.connect(self.worker.execute_extruding)
             self.request_clean.connect(self.worker.execute_clean)
+            self.request_first_hole_pan.connect(self.worker.execute_pan_test)
             self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
 
             self.gcode_thread.start()
@@ -440,9 +466,10 @@ class ControlTab(QWidget):
 
         self.btn_clean = QPushButton("CLEAN")
         self.btn_extrude = QPushButton("EXTRUDE")
+        self.btn_extrude = QPushButton("PAN FIRST HOLE TEST")
         self.btn_stop_extrude = QPushButton("STOP EXTRUDE")
         self.home_start = QPushButton("HOME ROBOT")
-        #self.btn_probe_z = QPushButton("PROBE Z")
+        self.btn_probe_z = QPushButton("PROBE Z")
         self.start_soldering_sequence = QPushButton("START SOLDERING SEQUENCE")
         self.go_first = QPushButton("FIND WORKSPACE")
         self.btn_set_zero = QPushButton("SET ZERO WORKSPACE")  # NEW
@@ -469,7 +496,7 @@ class ControlTab(QWidget):
         right_panel.addWidget(self.btn_stop_extrude)
         right_panel.addWidget(self.home_start)
         right_panel.addWidget(self.start_soldering_sequence)
-        #right_panel.addWidget(self.btn_probe_z)
+        right_panel.addWidget(self.btn_probe_z)
         right_panel.addWidget(self.go_first)
         right_panel.addWidget(self.btn_set_zero)
         right_panel.addWidget(self.btn_return_start)
@@ -499,7 +526,7 @@ class ControlTab(QWidget):
         self.btn_extrude.clicked.connect(self.extrude_button_clicked)
         self.home_start.clicked.connect(self.home_button_clicked)
         self.start_soldering_sequence.clicked.connect(self.start_soldering_sequence_clicked)
-        #self.btn_probe_z.clicked.connect(self.probe_z_clicked)
+        self.btn_probe_z.clicked.connect(self.probe_z_clicked)
         self.go_first.clicked.connect(self.find_workspace_button_clicked)
         self.btn_stop_extrude.clicked.connect(self.stop_extrude_button_clicked)
 
@@ -542,27 +569,91 @@ class ControlTab(QWidget):
         self.go_first.setEnabled(True)
         self.btn_return_start.setEnabled(False)
         self.btn_set_zero.setEnabled(False)
-        self.jog_widget.setEnabled(True)
+        self.jog_widget.setEnabled(False)
+
+        # move z arm down to avoid collision
+        self.esp32.move_z_arm_down()
+
         self.request_home.emit()
 
     def probe_z_clicked(self):
         print("Probing Z height...")
-        # This is a placeholder. You would implement the actual probing logic here.
-        # For example, you might send a G38.2 command to probe the Z axis and then read the result.
-        # self.request_probe_z.emit()
+        #self.esp32.move_z_arm_down()
+        x_val = 142
+        y_val = 47
+        commands = [self.worker.controller.writer.positioning(reference="relative"),
+                    self.worker.controller.writer.rapid_positioning(x=x_val, y=y_val)]
+        
+        self.worker.controller.send_commands(commands=commands)
+        
+        self.wait_for_user("ahhh")
+
+        if not self.worker:
+            return
+        self.worker.log_requested.emit("Probing Z height...")
+        try:
+            command = self.worker.controller.writer.probe_z()
+            self.worker.controller.send_commands(commands=[command])
+        except Exception as e:
+            self.worker.log_requested.emit(f"G-Code Error: {str(e)}")
+        
+        time.sleep(0.5)
+
+        raw_data = self.worker.controller.poll_grbl()
+        match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
+        print(match)
+        
+        if match:
+            # The third capturing group is our Z value
+            z_val = float(match.group(3))
+        print("Probed Z value:", z_val)
+        self.request_jog.emit("Z", 10)
+        time.sleep(1)
+        self.esp32.move_z_arm_up()
         pass
 
     def clean_button_clicked(self):
         print("*Cleaning soldering iron tip...")
         self.request_clean.emit()
+        print("Extruding solder...")
+        self.request_extruding.emit(True)
+       
+    def extrude_button_clicked_old(self):
+        print("Extruding solder...")
+        self.request_extruding.emit(True)
 
     def extrude_button_clicked(self):
         print("Extruding solder...")
-        self.request_extruding.emit(True)
+        x, y = self.find_first_hole()
+        self.request_first_hole_pan.emit(x, -y)
 
     def stop_extrude_button_clicked(self):
         print("Stopping extruding...")
         self.request_extruding.emit(False)
+
+    def find_first_hole(self):
+    # PAN TESTING LOL
+        # load .json
+        with open("board_data.json", "r") as f:
+            data = json.load(f)
+
+        pixel_first_hole_x = data.get("first_hole", [0, 0])[0]
+        pixel_first_hole_y = data.get("first_hole", [0, 0])[1]
+        pixel_home_x, pixel_home_y = data.get("camera_pixel_zero", [0, 0])
+        pixel_mm_ratio = data.get("pixel_mm_ratio", 1)
+
+        print(f"First hole pixel coordinates: X={pixel_first_hole_x}, Y={pixel_first_hole_y}")
+        print(f"Camera pixel zero (home): X={pixel_home_x}, Y={pixel_home_y}")
+        print(f"Pixel to mm ratio: {pixel_mm_ratio}")
+        print("Calculating real-world coordinates for first hole...")
+
+        print(f"Calculated first hole position relative to camera zero: X={(pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio} mm, Y={(pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio} mm")
+
+        first_hole_move_x =round((pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio, 2) # round to nearest .2
+        first_hole_move_y = round((pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio, 2) # round to nearest .2
+
+        return first_hole_move_x, first_hole_move_y
+        
 
     def start_soldering_sequence_clicked(self):
         print("Starting soldering sequence...")
@@ -575,14 +666,6 @@ class ControlTab(QWidget):
         except Exception as e:
             print("Error loading board_data.json:", e)
             board_data = None
-
-        def wait_for_user(msg):
-            # for testing purposes only
-            dlg = QMessageBox()
-            dlg.setWindowTitle("Continue?")
-            dlg.setText(msg)
-            dlg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            dlg.exec()
 
         if board_data:
             #self.home_button_clicked()  # Ensure we start from a known position
@@ -603,6 +686,14 @@ class ControlTab(QWidget):
                 self.request_jog.emit("Z", 10)
                 time.sleep(2)
 
+    def wait_for_user(self, msg):
+            # for testing purposes only
+            dlg = QMessageBox()
+            dlg.setWindowTitle("Continue?")
+            dlg.setText(msg)
+            dlg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            dlg.exec()
+
 import cv2
 import time
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -613,7 +704,9 @@ class CameraWorker(QThread):
 
     def run(self):
         # 1. Initialize capture
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Adjust index as needed
+
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
 
