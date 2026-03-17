@@ -110,10 +110,6 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             pos = event.scenePos()  # position in scene coordinates
 
             hole_x, hole_y = self.find_closest_hole(pos.x(), pos.y())
-            
-            if (hole_x, hole_y) in self.points:
-                print(f"Point already exist ({hole_x}, {hole_y})")
-                return
 
             # check if hole is already selected
             if (hole_x, hole_y) not in self.points:
