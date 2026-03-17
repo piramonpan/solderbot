@@ -30,7 +30,7 @@ class BoardViewTab(QWidget):
     def init_ui(self):
         self.popup = ImagePopUp()
 
-        self.popup.camera_thread.image_captured_signal.connect(
+        self.popup.image_captured_signal.connect(
             self.transition_to_selector
         )
         self.popup.page_cal.btn_next.clicked.connect(self.go_to_selector)
@@ -192,13 +192,15 @@ class BoardViewTab(QWidget):
 
         #### IMAGE PROCESSING
         ##### TODO: HARDCODED FOR TESTING ####
-        self.cv_frame = cv2.imread(
-            IMG_PATH
-        )  # Convert path to cv_frame for now, but we want to skip this step eventually
-
-        self.image_processor = ImageProcessor(self.cv_frame)
-        # Run your orange marker detection here
-        self.image_processor.find_pixel_locations()
+        self.cv_frame = cv_frame
+        
+        self.image_processor = ImageProcessor(cv_frame)
+        result = self.image_processor.find_pixel_locations()
+        if not result:
+            print("Failed to find pixel locations.")
+            self.popup.page_cal.btn_next.setEnabled(False)
+            return
+        
         self.image_processor.find_blob_center()
 
         #### REUTRN RGB FRAME WITH MARKERS DRAWN ON IT

@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import math
 
-IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_6.jpg"  # Update this to your image path
+IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_9.jpg"  # Update this to your image path
 
 
 class ImageProcessor:
@@ -18,15 +18,27 @@ class ImageProcessor:
         self.keypoints = None
 
         self.first_hole_pixel = None
-        self.pixel_home = [0,0] # x,y 
+        self.pixel_home = [0,0] # x,y
         self.pixel_mm_ratio = 1 # mm per pixel, to be calibrated based on the actual board and camera setup
 
-    def find_pixel_locations(self):
-         x , y = self.detect_orange_markers()
-         corner_x, _ = self.detect_blue_markers()
+        # Yellow circle detection results
+        self.yellow_circle_centers = []  # List of (x, y) tuples for detected yellow circles
 
-         self.pixel_home = [x, y]
-         self.pixel_mm_ratio = math.fabs(corner_x[0] - corner_x[1]) / 115.0 # Assuming the distance between the two blue corners is 100mm in real life
+    def find_pixel_locations(self):
+        #  x , y = self.detect_orange_markers()
+        #  corner_x, _ = self.detect_blue_markers()
+
+        hole_centers = self.detect_yellow_circles()
+        print(f"Yellow circle centers: {hole_centers}")
+
+        if len(hole_centers) != 2:
+            print(f"Warning: Expected to find 2 yellow circles for calibration, but found {len(hole_centers)}")
+            return False
+        
+        else:
+            self.pixel_home = hole_centers[0] if len(hole_centers) > 0 else [0, 0]
+            self.pixel_mm_ratio = math.fabs(hole_centers[0][0] - hole_centers[1][0]) / 115.0 if len(hole_centers) > 1 else 1 # Assuming 115mm between the two yellow circles in real life
+            return True
 
     def find_blob_center(self):   
         # 1. Load and Pre-process
@@ -69,9 +81,6 @@ class ImageProcessor:
             cv2.imshow("Holes Detected", self.image_copy)
             cv2.waitKey(0)
 
-    def nothing(self, x):
-        pass
-
     def find_valleys(self, points, min_samples=5):
         """
         Identifies and removes coordinates that belong to 'valleys' 
@@ -87,7 +96,8 @@ class ImageProcessor:
         origin_y = np.percentile(points_np[:, 1], 4)
         origin = self.first_hole_pixel if self.first_hole_pixel is not None else np.array([origin_x, origin_y])
 
-        print(f"Origin (Top-Left Hole): {origin}, Estimated Pitch: {pitch}px")
+        if self.verbose:
+            print(f"Origin (Top-Left Hole): {origin}, Estimated Pitch: {pitch}px")
         grid_coords = np.round((points_np - origin) / pitch).astype(int)
 
         # 2. Separate X and Y indices
@@ -108,7 +118,8 @@ class ImageProcessor:
         self.cleaned_points = points_np[mask]
         self.cleaned_grid = grid_coords[mask]
         
-        print(f"Valid Columns (X): {self.valid_x}, Valid Rows (Y): {self.valid_y}")
+        if self.verbose:
+            print(f"Valid Columns (X): {self.valid_x}, Valid Rows (Y): {self.valid_y}")
         return self.cleaned_points, self.cleaned_grid, self.valid_x, self.valid_y
     
     def detect_orange_markers(self):
@@ -125,12 +136,13 @@ class ImageProcessor:
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
         # 5. Circle Detection
+        cx, cy = None, None
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for cnt in contours:
             if cv2.contourArea(cnt) > 500:
                 # Calculate moments for the center of mass
                 M = cv2.moments(cnt)
-                
+
                 if M["m00"] != 0:
                         # Formula for centroid: cx = M10/M00, cy = M01/M00
                         cx = int(M["m10"] / M["m00"])
@@ -140,102 +152,88 @@ class ImageProcessor:
                         cv2.circle(self.image_copy, (cx, cy), 5, (0, 0, 255), -1) # Red dot at center
                         cv2.putText(self.image_copy, f"Center: {cx},{cy}", (cx - 20, cy - 20),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                        
+
                         # Optional: Draw the outer circle for visualization
                         (x, y), radius = cv2.minEnclosingCircle(cnt)
                         cv2.circle(self.image_copy, (int(x), int(y)), int(radius), (0, 255, 0), 2)
-        
-            if self.verbose:
-                cv2.imshow('Bright Orange Center Detection', self.image_copy)
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
-
-            return cx, cy  
-    
-        return None, None
-        
-
-    def detect_blue_markers(self):
-        corner_x = []
-        corner_y= []
-
-        # This function can be implemented to detect blue markers for orientation
-        # 1. Load and Scale
-
-        scale = 0.5
-        hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
-
-        # 2. Baby Blue Mask (Bright & Light)
-        lower_blue = np.array([100, 150, 50])
-        upper_blue = np.array([130, 255, 255])
-        mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
         if self.verbose:
-            cv2.imshow('Initial Blue Mask', mask)
+            cv2.imshow('Bright Orange Center Detection', self.image_copy)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-        # 3. Clean up
-        kernel = np.ones((5,5), np.uint8)
+        return cx, cy
+
+    def detect_yellow_circles(self):
+        """
+        Detects two yellow circles from the image and stores their center coordinates.
+        Returns a list of (x, y) tuples for the detected circle centers.
+        """
+        self.yellow_circle_centers = []
+
+        hsv = cv2.cvtColor(self.image_copy, cv2.COLOR_BGR2HSV)
+
+        # Yellow color range in HSV
+        lower_yellow = np.array([20, 100, 100])
+        upper_yellow = np.array([35, 255, 255])
+        
+        lower_yellow = np.array([20, 100, 100])
+        upper_yellow = np.array([30, 255, 255])
+
+        # Apply mask
+        mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+        # Clean up the mask (removes noise)
+        kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-        # 4. Find Contours
+        # Find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # display_img = cv2.resize(self.image_, None, fx=scale, fy=scale)
-
         for cnt in contours:
-            if cv2.contourArea(cnt) > 200:
-                    if len(corner_y) > 2:
-                         print("DEBUG: SOMETHING WRONG WITH BLUE SQUARE CALIBRATION")
+            area = cv2.contourArea(cnt)
+            if area > 500:
+                # Check circularity
+                perimeter = cv2.arcLength(cnt, True)
+                if perimeter > 0:
+                    circularity = 4 * np.pi * area / (perimeter * perimeter)
 
-                    # --- BOUNDING RECT LOGIC ---
-                    # x, y is the top-left corner; w, h are width and height
-                    x, y, w, h = cv2.boundingRect(cnt)
-                    # 1. Calculate Aspect Ratio
-                    aspect_ratio = float(w) / h
+                    # Only accept circular shapes (circularity > 0.7)
+                    if circularity > 0.7:
+                        print(f"Detected yellow contour with area {area} and circularity {circularity:.2f}")
+                        # Calculate centroid using moments
+                        M = cv2.moments(cnt)
 
-                    # 2. Check if it is a SQUARE (0.8 to 1.2 to allow for camera tilt)
-                    if 0.8 <= aspect_ratio <= 1.2:
-                            # Calculate REAL center (on the original high-res image)
-                            cx = x + (w // 2)
-                            cy = y + (h // 2)
-                            
-                            # --- DISPLAY (Scaled down) ---
-                            # Scale coordinates for the preview window
-                            sx, sy, sw, sh = int(x*scale), int(y*scale), int(w*scale), int(h*scale)
-                            scx, scy = int(cx*scale), int(cy*scale)
+                        if M["m00"] != 0:
+                            cx = int(M["m10"] / M["m00"])
+                            cy = int(M["m01"] / M["m00"])
 
-                            if len(corner_x) == 1:
-                                corner_x.append(x)
-                                corner_y.append(y)
-                            
-                            else:
-                                corner_x.append(x+w)
-                                corner_y.append(y)
-                                # Draw the box and the center point
-                                # cv2.rectangle(display_img, (sx, sy), (sx + sw, sy + sh), (0, 255, 0), 2)
-                                # cv2.circle(display_img, (scx, scy), 5, (0, 0, 255), -1)
-                                
-                            cv2.rectangle(self.image_copy, (x, y), (x + w, y + h), (255, 0, 0), 2)
-                            cv2.circle(self.image_copy, (cx, cy), 5, (0, 0, 255), -1)
-                            
-                            if self.verbose:
-                                print(f"Square Target: X={cx}px, Y={cy}px (Width: {w}px)")
-                                print(f"Square CORNER Target: X={x}px, Y={y}px (Width: {w}px)")
+                            self.yellow_circle_centers.append((cx, cy))
 
+                            # Draw center and visualization
+                            cv2.circle(self.image_copy, (cx, cy), 5, (0, 255, 255), -1)  # Yellow dot at center
+                            cv2.putText(self.image_copy, f"Yellow: {cx},{cy}", (cx - 20, cy - 20),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+                            # Draw the outer circle for visualization
+                            (x, y), radius = cv2.minEnclosingCircle(cnt)
+                            cv2.circle(self.image_copy, (int(x), int(y)), int(radius), (0, 255, 255), 2)
 
         if self.verbose:
-            cv2.namedWindow('BoundingRect Square Detection', cv2.WINDOW_NORMAL) # 1. Create a normal window
-            cv2.imshow('BoundingRect Square Detection', self.image_copy)
+            cv2.imshow('Yellow Circle Detection', self.image_copy)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-        return corner_x, corner_y
+        if self.verbose:
+            if len(self.yellow_circle_centers) >= 2:
+                print(f"Detected {len(self.yellow_circle_centers)} yellow circles:")
+                for i, (cx, cy) in enumerate(self.yellow_circle_centers[:2]):
+                    print(f"  Circle {i+1}: x={cx}, y={cy}")
+            else:
+                print(f"Warning: Expected 2 yellow circles, found {len(self.yellow_circle_centers)}")
+
+        return self.yellow_circle_centers
 
 if __name__ == "__main__":
-    processor = ImageProcessor(IMG_PATH)
-    processor.find_blob_center()
-    
-    print(max(processor.cleaned_grid[:, 0]))
-    print(max(processor.cleaned_grid[:, 1]))
+    img = cv2.imread(IMG_PATH)
+    processor = ImageProcessor(img, verbose=True)

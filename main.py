@@ -9,7 +9,7 @@ from core.logger import setup_logger
 from core.grbl_controller import GRBLController
 from PyQt6.QtWidgets import QSizePolicy
 
-PORT = "COM7"  # change to correct port
+PORT = "COM10"  # change to correct port
 
 class SolderBotApp(QMainWindow):
     def __init__(self, test_mode):
@@ -49,7 +49,7 @@ class SolderBotApp(QMainWindow):
         self.layout.addWidget(self.tabs)
 
         ### SETUP LOGGING ###
-        # self.ui_log_handler.new_record.connect(self.control_tab.log) # when handler recieve a new log, it emit a signal and send to control tab log panel
+        self.ui_log_handler.new_record.connect(self.control_tab.log)
         self.logger.info("SolderBot Application Initialized.")
 
     def set_up_sidebar(self):

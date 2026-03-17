@@ -22,26 +22,22 @@ class ESP32:
     def send_message(self, message, timeout=5):
         """
         Sends a string to ESP32 and waits for an 'ACK' response.
-        Returns the response string if successful, None if it times out.
+        Returns the response string if successful, None otherwise.
         """
+        if self.ser is None:
+            print("ESP32 not connected — cannot send message.")
+            return None
         try:
-            # 1. Clear buffers to ensure we aren't reading old data
             self.ser.reset_input_buffer()
-            
-            # 2. Send the message (with a newline so ESP32 knows it's the end)
-            print(f"Sending message: '{message}'")
             self.ser.write(f"{message}\n".encode('utf-8'))
 
-            # 3. Wait for the ACK
             start_time = time.time()
             while (time.time() - start_time) < float(timeout):
                 if self.ser.in_waiting > 0:
                     line = self.ser.readline().decode('utf-8').strip()
-                    print(f"Received: '{line}'")
                     if "ACK" in line:
-                        return line # Success!
-            
-            return None # Timed out
+                        return line
+            return None  # Timed out
         except Exception as e:
             print(f"Communication error: {e}")
             return None
@@ -60,8 +56,10 @@ class ESP32:
         response = self.send_message("MOVE_Z_UP")
         if response == "ACK: Servo moved up":
             print(f"ESP32 Response: {response}")
+            return True
         else:
             print("Failed to receive ACK from ESP32 for MOVE_Z_UP command.")
+            return False
 
     def close(self):
         if self.ser:

@@ -37,6 +37,12 @@ class TakeImageThread(QThread):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         time.sleep(1)
 
+
+        if not cap.isOpened():
+                print("Error: Could not open video device.")
+        else:
+                print("Success: Camera is working!")
+
         while self._run_flag:
             if self.is_paused:
                 time.sleep(0.5)
@@ -45,7 +51,8 @@ class TakeImageThread(QThread):
             ret, cv_img = cap.read()
 
             if not (ret and cv_img is not None):
-                continue
+                print("Failed to capture image from camera TOP.")
+                return
 
             if self.capture_requested:
                 self.capture_requested = False
@@ -202,9 +209,8 @@ class CameraPage(QWidget):
         self.video_sink.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         controls = QHBoxLayout()
-        self.btn_capture = QPushButton("CAPTURE")
-        self.btn_capture.setFixedSize(300, 50)
-        self.btn_capture.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.btn_capture = QPushButton("Capture")
+        self.btn_capture.setFixedSize(140, 34)
         controls.addStretch()
         controls.addWidget(self.btn_capture)
         controls.addStretch()
@@ -235,10 +241,10 @@ class CalibrationPage(QWidget):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         controls = QHBoxLayout()
-        self.btn_back = QPushButton("RETAKE")
-        self.btn_next = QPushButton("PROCEED")
-        self.btn_back.setFixedSize(150, 50)
-        self.btn_next.setFixedSize(150, 50)
+        self.btn_back = QPushButton("Retake")
+        self.btn_next = QPushButton("Proceed")
+        self.btn_back.setFixedSize(110, 34)
+        self.btn_next.setFixedSize(110, 34)
         controls.addStretch()
         controls.addWidget(self.btn_back)
         controls.addWidget(self.btn_next)
@@ -273,11 +279,10 @@ class SelectorPage(QWidget):
         self.view.setStyleSheet("border: 1px solid #ccc; background-color: #f0f0f0;")
 
         controls = QHBoxLayout()
-        self.btn_back = QPushButton("BACK")
-        self.btn_confirm = QPushButton("CONFIRM")
-
-        self.btn_back.setFixedSize(150, 50)
-        self.btn_confirm.setFixedSize(150, 50)
+        self.btn_back = QPushButton("Back")
+        self.btn_confirm = QPushButton("Confirm")
+        self.btn_back.setFixedSize(110, 34)
+        self.btn_confirm.setFixedSize(110, 34)
         controls.addStretch()
         controls.addWidget(self.btn_back)
         controls.addWidget(self.btn_confirm)
@@ -293,13 +298,14 @@ class SelectorPage(QWidget):
 
 
 class ImagePopUp(QMainWindow):
+    image_captured_signal = pyqtSignal(object)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SolderBot Vision Control")
         self.resize(1100, 800)
 
         self.camera_thread = TakeImageThread()
-        self.camera_thread.start()
 
         self.stack = QStackedWidget()
         self.page_cam = CameraPage()
@@ -317,6 +323,7 @@ class ImagePopUp(QMainWindow):
 
         # Navigation Connections
         self.page_cam.btn_capture.clicked.connect(self.request_capture)
+        self.page_cal.btn_back.clicked.connect(lambda: self.page_cal.btn_next.setEnabled(True)) 
         self.page_cal.btn_back.clicked.connect(lambda: self.stack.setCurrentIndex(0))
         self.page_sel.btn_back.clicked.connect(lambda: self.stack.setCurrentIndex(1))
 
@@ -339,6 +346,7 @@ class ImagePopUp(QMainWindow):
     def handle_capture(self, cv_frame):
         self.page_cal.update_preview(cv_frame)
         self.stack.setCurrentIndex(1)
+        self.image_captured_signal.emit(cv_frame)
 
     def go_to_selector(self):
         frame = self.page_cal.current_frame
@@ -347,10 +355,21 @@ class ImagePopUp(QMainWindow):
             self.page_sel.view.load_from_ndarray(rgb_frame)
             self.stack.setCurrentIndex(2)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self.camera_thread.isRunning():
+            self.camera_thread = TakeImageThread()
+            self.camera_thread.change_pixmap_signal.connect(self.update_video)
+            self.camera_thread.image_captured_signal.connect(self.handle_capture)
+            self.camera_thread.start()
+
     def close_window(self):
         self.close()
 
     def closeEvent(self, event):
+        self.camera_thread._run_flag = False
+        self.camera_thread.quit()
+        self.camera_thread.wait()
         event.accept()
 
 

@@ -43,7 +43,6 @@ class GCodeWorker(QObject):
         if not self.controller:
             return
         self.log_requested.emit(f"Testing pan move to X:{x} Y:{y}")
-        print(f"DEBUGGGG {y}")
         try:
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
@@ -52,8 +51,7 @@ class GCodeWorker(QObject):
             ]
             self.controller.send_commands(commands=commands)
         except Exception as e:
-            print("ERROR IN PAN TEST:", str(e))
-            self.log_requested.emit(f"G-Code Error: {str(e)}")
+            self.log_requested.emit(f"Pan test error: {str(e)}")
 
     @pyqtSlot(str, float)
     def execute_jog(self, axis, step_size):
@@ -88,13 +86,7 @@ class GCodeWorker(QObject):
 
     @pyqtSlot()
     def execute_find_workspace(self):
-        """
-            Move to an estimated location of the workspace and set that as the new zero reference point.
-            This is a simplified version of what could be a more complex workspace finding routine that uses the camera feed to visually identify the workspace location.
-        """
-        x_val = 65.5
-        y_val = 105
-        z_val = -24
+        """Move to an estimated workspace location and set it as the new zero reference."""
         x_val = 59
         y_val = 112.5
         z_val = -30
@@ -123,16 +115,14 @@ class GCodeWorker(QObject):
 
     @pyqtSlot(int, int)
     def execute_goto_grid(self, col, row):
-        """Skeleton: User-defined Grid Move"""
+        """Move to the given grid column and row."""
         if not self.controller:
             return
         self.log_requested.emit(f"GRID MOVE: Navigating to Column {col}, Row {row}")
 
         try:
-            # Placeholder logic for grid navigation
             y_coord = col * -2.54 if col != 0 else 0
             x_coord = row * 2.54 if row != 0 else 0
-            z_coord = -10
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.set_workspace(),
@@ -141,12 +131,11 @@ class GCodeWorker(QObject):
             self.controller.send_commands(commands=commands)
 
         except Exception as e:
-            print("ERROR IN GRID MOVE:", str(e))
-            self.log_requested.emit(f"G-Code Error: {str(e)}")
+            self.log_requested.emit(f"Grid move error: {str(e)}")
 
     @pyqtSlot(int, int)
     def execute_goto_grid_2(self, col, row):
-        """ new functio, not tested"""
+        """Move to grid position and dip Z for soldering."""
         if not self.controller:
             return
         self.log_requested.emit(f"GRID MOVE: Navigating to Column {col}, Row {row}")
@@ -169,15 +158,11 @@ class GCodeWorker(QObject):
             self.controller.send_commands(commands=commands)
 
         except Exception as e:
-            print("ERROR IN GRID MOVE:", str(e))
-            self.log_requested.emit(f"G-Code Error: {str(e)}")
-
-
+            self.log_requested.emit(f"Grid move error: {str(e)}")
 
     @pyqtSlot(float, float)
     def execute_custom_solder(self, extrude_time, hold_time):
-        # FIRST METHOD: USING G4 IF WORKING
-        """Skeleton: Custom Solder Parameters"""
+        """Dispense solder using G4 dwell command."""
         if not self.controller:
             return
         self.log_requested.emit(
@@ -201,8 +186,7 @@ class GCodeWorker(QObject):
 
     @pyqtSlot(float, float)
     def execute_custom_solder_2(self, extrude_time, hold_time):
-        # SECOND METHOD: USING DELAY IN PYTHON (LESS PREFERRED)
-        """Skeleton: Custom Solder Parameters"""
+        """Dispense solder using Python-side delays."""
         if not self.controller:
             return
         self.log_requested.emit(
@@ -388,10 +372,16 @@ class ControlTab(QWidget):
         super().__init__()
         self.gcode_controller = gcode_controller
         self.logger = logger
+        self.worker = None
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(25)
+
         self.esp32 = ESP32()
+        self.esp32_available = self.esp32.ser is not None
+        if not self.esp32_available:
+            self.logger.warning("ESP32 not connected — Z-arm steps will be skipped.")
+
         self.init_ui()
 
         # Threads
@@ -464,44 +454,42 @@ class ControlTab(QWidget):
         prog_layout.addWidget(self.status_label)
         progress_group.setLayout(prog_layout)
 
-        self.btn_clean = QPushButton("CLEAN")
-        self.btn_extrude = QPushButton("EXTRUDE")
-        self.btn_extrude = QPushButton("PAN FIRST HOLE TEST")
-        self.btn_stop_extrude = QPushButton("STOP EXTRUDE")
-        self.home_start = QPushButton("HOME ROBOT")
-        self.btn_probe_z = QPushButton("PROBE Z")
-        self.start_soldering_sequence = QPushButton("START SOLDERING SEQUENCE")
-        self.go_first = QPushButton("FIND WORKSPACE")
-        self.btn_set_zero = QPushButton("SET ZERO WORKSPACE")  # NEW
-        self.btn_return_start = QPushButton("RETURN TO FIRST SPOT")  # NEW
-        self.btn_start = QPushButton("START SEQUENCE")
-        self.btn_stop = QPushButton("EMERGENCY STOP")
+        # --- Gantry Setup Group ---
+        setup_group = QGroupBox("Gantry Setup")
+        setup_layout = QVBoxLayout()
+        setup_layout.setSpacing(5)
+        self.home_start = QPushButton("Home")
+        self.go_first = QPushButton("Find Workspace")
+        self.btn_set_zero = QPushButton("Set Zero")
+        self.btn_return_start = QPushButton("Return to Start")
+        self.btn_probe_z = QPushButton("Probe Z")
+        for btn in [self.home_start, self.go_first, self.btn_set_zero,
+                    self.btn_return_start, self.btn_probe_z]:
+            setup_layout.addWidget(btn)
+        setup_group.setLayout(setup_layout)
 
-        for btn in [
-            self.home_start,
-            self.start_soldering_sequence,
-            self.go_first,
-            self.btn_set_zero,
-            self.btn_return_start,
-            self.btn_start,
-            self.btn_stop,
-        ]:
-            btn.setFixedHeight(45)
+        # --- Dispensing Group ---
+        disp_group = QGroupBox("Other Util")
+        disp_layout = QVBoxLayout()
+        disp_layout.setSpacing(5)
+        self.btn_clean = QPushButton("Clean Tip")
+        self.btn_extrude = QPushButton("Pan to First Hole")
+        self.btn_stop_extrude = QPushButton("Stop Extrude")
+        for btn in [self.btn_clean, self.btn_extrude, self.btn_stop_extrude]:
+            disp_layout.addWidget(btn)
+        disp_group.setLayout(disp_layout)
+
+        # Reserved / inactive buttons (wired in connect_buttons)
+        self.btn_start = QPushButton("Start Sequence")
+        self.btn_stop = QPushButton("Emergency Stop")
+        self.start_soldering_sequence = QPushButton("Start Soldering")
+        self.start_soldering_sequence.setObjectName("btn_start")
 
         right_panel.addWidget(self.jog_widget)
-        # right_panel.addWidget(progress_group)
+        right_panel.addWidget(setup_group)
+        right_panel.addWidget(disp_group)
         right_panel.addStretch()
-        right_panel.addWidget(self.btn_clean)
-        right_panel.addWidget(self.btn_extrude)
-        right_panel.addWidget(self.btn_stop_extrude)
-        right_panel.addWidget(self.home_start)
         right_panel.addWidget(self.start_soldering_sequence)
-        right_panel.addWidget(self.btn_probe_z)
-        right_panel.addWidget(self.go_first)
-        right_panel.addWidget(self.btn_set_zero)
-        right_panel.addWidget(self.btn_return_start)
-        # right_panel.addWidget(self.btn_start)
-        # right_panel.addWidget(self.btn_stop)
 
         self.main_layout.addLayout(left_panel, stretch=2)
         self.main_layout.addLayout(right_panel, stretch=1)
@@ -549,15 +537,26 @@ class ControlTab(QWidget):
     def issue_set_zero_workspace(self):
         self.request_set_zero_workspace.emit()
 
+    def log(self, msg: str, level: int):
+        import logging as _logging
+        if level >= _logging.ERROR:
+            self.log_output.appendHtml(f'<span style="color:#FF3B30;">{msg}</span>')
+        elif level >= _logging.WARNING:
+            self.log_output.appendHtml(f'<span style="color:#FF9500;">{msg}</span>')
+        else:
+            self.log_output.appendPlainText(msg)
+        self.log_output.verticalScrollBar().setValue(
+            self.log_output.verticalScrollBar().maximum()
+        )
+
     def update_label(self, q_image):
         pixmap = QPixmap.fromImage(q_image)
         self.primary_feed.setPixmap(
             pixmap.scaled(self.primary_feed.size(), Qt.AspectRatioMode.KeepAspectRatio)
         )
-        # (Zoom logic omitted for brevity, but remains same as your original)
 
     def find_workspace_button_clicked(self):
-        print("Finding workspace..")
+        self.logger.info("Finding workspace...")
         self.go_first.setEnabled(False)
         self.btn_return_start.setEnabled(True)
         self.btn_set_zero.setEnabled(True)
@@ -565,126 +564,131 @@ class ControlTab(QWidget):
         self.request_first.emit()
 
     def home_button_clicked(self):
-        print("Homing robot...")
+        self.logger.info("Homing robot...")
         self.go_first.setEnabled(True)
         self.btn_return_start.setEnabled(False)
         self.btn_set_zero.setEnabled(False)
-        self.jog_widget.setEnabled(False)
+        self.jog_widget.setEnabled(True)
 
-        # move z arm down to avoid collision
-        self.esp32.move_z_arm_down()
+        if self.esp32_available:
+            self.esp32.move_z_arm_down()
+        else:
+            self.logger.warning("ESP32 unavailable — skipping Z-arm lower before home.")
 
         self.request_home.emit()
 
     def probe_z_clicked(self):
-        print("Probing Z height...")
-        #self.esp32.move_z_arm_down()
-        x_val = 142
-        y_val = 47
-        commands = [self.worker.controller.writer.positioning(reference="relative"),
-                    self.worker.controller.writer.rapid_positioning(x=x_val, y=y_val)]
-        
-        self.worker.controller.send_commands(commands=commands)
-        
-        self.wait_for_user("ahhh")
-
-        if not self.worker:
+        if not self.worker or not self.worker.controller:
+            self.logger.warning("No GRBL controller available for Z probe.")
             return
-        self.worker.log_requested.emit("Probing Z height...")
-        try:
-            command = self.worker.controller.writer.probe_z()
-            self.worker.controller.send_commands(commands=[command])
-        except Exception as e:
-            self.worker.log_requested.emit(f"G-Code Error: {str(e)}")
-        
-        time.sleep(0.5)
 
-        raw_data = self.worker.controller.poll_grbl()
-        match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
-        print(match)
-        
-        if match:
-            # The third capturing group is our Z value
-            z_val = float(match.group(3))
-        print("Probed Z value:", z_val)
-        self.request_jog.emit("Z", 10)
-        time.sleep(1)
-        self.esp32.move_z_arm_up()
-        pass
+        self.logger.info("Probing Z height...")
+        try:
+            commands = [
+                self.worker.controller.writer.positioning(reference="relative"),
+                self.worker.controller.writer.rapid_positioning(x=142, y=47),
+            ]
+            self.worker.controller.send_commands(commands=commands)
+
+            self.wait_for_user("Position reached — proceed with Z probe?")
+
+            self.worker.controller.send_commands(
+                commands=[self.worker.controller.writer.probe_z()]
+            )
+            time.sleep(0.5)
+
+            raw_data = self.worker.controller.poll_grbl()
+            match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
+            if match:
+                z_val = float(match.group(3))
+                self.logger.info(f"Probed Z value: {z_val}")
+            else:
+                self.logger.warning(f"Z probe response not parsed — raw: {raw_data}")
+
+            self.request_jog.emit("Z", 10)
+            time.sleep(1)
+
+            if self.esp32_available:
+                self.esp32.move_z_arm_up()
+            else:
+                self.logger.warning("ESP32 unavailable — skipping Z-arm raise after probe.")
+
+        except Exception as e:
+            self.logger.error(f"Z probe failed: {e}")
 
     def clean_button_clicked(self):
-        print("*Cleaning soldering iron tip...")
+        self.logger.info("Cleaning soldering iron tip and extruding...")
         self.request_clean.emit()
-        print("Extruding solder...")
-        self.request_extruding.emit(True)
-       
-    def extrude_button_clicked_old(self):
-        print("Extruding solder...")
         self.request_extruding.emit(True)
 
     def extrude_button_clicked(self):
-        print("Extruding solder...")
-        x, y = self.find_first_hole()
-        self.request_first_hole_pan.emit(x, -y)
+        try:
+            x, y = self.find_first_hole()
+            self.request_first_hole_pan.emit(x, -y)
+        except Exception as e:
+            self.logger.error(f"Pan to first hole failed: {e}")
 
     def stop_extrude_button_clicked(self):
-        print("Stopping extruding...")
+        self.logger.info("Stopping extrusion...")
         self.request_extruding.emit(False)
 
     def find_first_hole(self):
-    # PAN TESTING LOL
-        # load .json
-        with open("board_data.json", "r") as f:
-            data = json.load(f)
+        try:
+            with open("board_data.json", "r") as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            self.logger.error("board_data.json not found — cannot locate first hole.")
+            return 0.0, 0.0
+        except json.JSONDecodeError as e:
+            self.logger.error(f"board_data.json is malformed: {e}")
+            return 0.0, 0.0
 
         pixel_first_hole_x = data.get("first_hole", [0, 0])[0]
         pixel_first_hole_y = data.get("first_hole", [0, 0])[1]
         pixel_home_x, pixel_home_y = data.get("camera_pixel_zero", [0, 0])
         pixel_mm_ratio = data.get("pixel_mm_ratio", 1)
 
-        print(f"First hole pixel coordinates: X={pixel_first_hole_x}, Y={pixel_first_hole_y}")
-        print(f"Camera pixel zero (home): X={pixel_home_x}, Y={pixel_home_y}")
-        print(f"Pixel to mm ratio: {pixel_mm_ratio}")
-        print("Calculating real-world coordinates for first hole...")
+        if not pixel_mm_ratio:
+            self.logger.error("pixel_mm_ratio is zero — cannot calculate real-world coordinates.")
+            return 0.0, 0.0
 
-        print(f"Calculated first hole position relative to camera zero: X={(pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio} mm, Y={(pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio} mm")
-
-        first_hole_move_x =round((pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio, 2) # round to nearest .2
-        first_hole_move_y = round((pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio, 2) # round to nearest .2
-
+        first_hole_move_x = round((pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio, 2)
+        first_hole_move_y = round((pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio, 2)
+        self.logger.info(f"First hole offset: X={first_hole_move_x}mm, Y={first_hole_move_y}mm")
         return first_hole_move_x, first_hole_move_y
         
 
     def start_soldering_sequence_clicked(self):
-        print("Starting soldering sequence...")
-        board_data_path = os.path.join(os.path.dirname(__file__), '../../board_data_demo.json')
-        board_data_path = os.path.abspath(board_data_path)
+        if not self.worker:
+            self.logger.warning("No GRBL worker available — cannot start sequence.")
+            return
+
+        board_data_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), '../../board_data_demo.json')
+        )
         try:
             with open(board_data_path, 'r') as f:
                 board_data = json.load(f)
-            print("Loaded board_data.json:", board_data)
-        except Exception as e:
-            print("Error loading board_data.json:", e)
-            board_data = None
+        except FileNotFoundError:
+            self.logger.error(f"Board data not found: {board_data_path}")
+            return
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Board data malformed: {e}")
+            return
 
-        if board_data:
-            #self.home_button_clicked()  # Ensure we start from a known position
-            #wait_for_user("Proceed after homing robot?")
-            #self.find_workspace_button_clicked()  # Move to workspace and set zero
+        self.logger.info("Starting soldering sequence...")
+        time.sleep(2)
+        self.request_jog.emit("Z", 10)
+
+        for point in board_data.get("points", []):
+            row, col = point[0], point[1]
+            time.sleep(2)
+            self.worker.execute_goto_grid_2(col - 1, row)
+            time.sleep(2)
+            self.worker.execute_custom_solder_2(extrude_time=0.6, hold_time=3)
             time.sleep(2)
             self.request_jog.emit("Z", 10)
-
-            for point in board_data["points"]:
-                print(point)
-                row = point[0]
-                col = point[1]
-                time.sleep(2)
-                self.worker.execute_goto_grid_2(col-1, row) # TODO: Hard coded please fix later :)
-                time.sleep(2)
-                self.worker.execute_custom_solder_2(extrude_time=0.6, hold_time=3)  # Extrude and solder
-                time.sleep(2)
-                self.request_jog.emit("Z", 10)
-                time.sleep(2)
+            time.sleep(2)
 
     def wait_for_user(self, msg):
             # for testing purposes only
@@ -703,12 +707,13 @@ class CameraWorker(QThread):
     frame_received = pyqtSignal(QImage)
 
     def run(self):
-        # 1. Initialize capture
-        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
-        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Adjust index as needed
-
+        cap = cv2.VideoCapture(-1, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+
+        if not cap.isOpened():
+            print("CameraWorker: failed to open camera index 0.")
+            return
 
         while self.isRunning():
             ret, frame = cap.read()
