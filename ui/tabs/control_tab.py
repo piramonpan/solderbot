@@ -624,7 +624,7 @@ class ControlTab(QWidget):
     def clean_button_clicked(self):
         self.logger.info("Cleaning soldering iron tip and extruding...")
         self.request_clean.emit()
-        self.request_extruding.emit(True)
+        self.request_extruding.emit(False)
 
     def extrude_button_clicked(self):
         try:
@@ -685,8 +685,14 @@ class ControlTab(QWidget):
         time.sleep(1)
         self.request_jog.emit("Z", 10)
 
+        counter = 0
         for point in board_data.get("points", []):
             row, col = point[0], point[1]
+            if counter > 3:
+                self.request_clean.emit()
+                self.request_extruding.emit(False)
+                counter = 0
+
             time.sleep(2)
             self.worker.execute_goto_grid_2(row-1, col-1)
             time.sleep(2)
@@ -694,6 +700,7 @@ class ControlTab(QWidget):
             time.sleep(2)
             self.request_jog.emit("Z", 10)
             time.sleep(2)
+            counter += 1
 
     def wait_for_user(self, msg):
             # for testing purposes only

@@ -385,7 +385,8 @@ class GRBLController:
             commands.append(self.writer.rapid_positioning(None, -15.0))
             commands.append(self.writer.rapid_positioning(None, 15.0))
         
-        # go back to soldering position
+        # move end effector up after cleaning
+        commands.append(self.writer.positioning("absolute"))
         commands.append(self.writer.move_up_down(self.height))
 
         return commands
