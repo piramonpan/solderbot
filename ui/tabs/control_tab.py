@@ -43,6 +43,8 @@ class GCodeWorker(QObject):
         if not self.controller:
             return
         self.log_requested.emit(f"Testing pan move to X:{x} Y:{y}")
+        x -= 0.5
+        y += 1.5
         try:
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
@@ -87,9 +89,9 @@ class GCodeWorker(QObject):
     @pyqtSlot()
     def execute_find_workspace(self):
         """Move to an estimated workspace location and set it as the new zero reference."""
-        x_val = 59
-        y_val = 112.5
-        z_val = -30
+        x_val = 61
+        y_val = 105.5 
+        z_val = -27
 
         commands = []
 
@@ -145,6 +147,9 @@ class GCodeWorker(QObject):
             y_coord = col * -2.54 if col != 0 else 0
             x_coord = row * 2.54 if row != 0 else 0
 
+            print(f"Row: {row}, Col: {col}")  # Debugging output
+            print(f"Calculated grid coordinates: X={x_coord}, Y={y_coord}")  # Debugging output
+    
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.set_workspace(),
@@ -664,7 +669,7 @@ class ControlTab(QWidget):
             return
 
         board_data_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), '../../board_data_demo.json')
+            os.path.join(os.path.dirname(__file__), '../../board_data.json')
         )
         try:
             with open(board_data_path, 'r') as f:
@@ -677,7 +682,7 @@ class ControlTab(QWidget):
             return
 
         self.logger.info("Starting soldering sequence...")
-        time.sleep(2)
+        time.sleep(1)
         self.request_jog.emit("Z", 10)
 
         counter = 0
@@ -689,7 +694,7 @@ class ControlTab(QWidget):
                 counter = 0
 
             time.sleep(2)
-            self.worker.execute_goto_grid_2(col - 1, row)
+            self.worker.execute_goto_grid_2(row-1, col-1)
             time.sleep(2)
             self.worker.execute_custom_solder_2(extrude_time=0.6, hold_time=3)
             time.sleep(2)

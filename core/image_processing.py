@@ -36,8 +36,9 @@ class ImageProcessor:
             return False
         
         else:
-            self.pixel_home = hole_centers[0] if len(hole_centers) > 0 else [0, 0]
-            self.pixel_mm_ratio = math.fabs(hole_centers[0][0] - hole_centers[1][0]) / 115.0 if len(hole_centers) > 1 else 1 # Assuming 115mm between the two yellow circles in real life
+            self.pixel_home = min(hole_centers, key=lambda pt: pt[0])
+            
+            self.pixel_mm_ratio = math.fabs(hole_centers[0][0] - hole_centers[1][0]) / 110.0 if len(hole_centers) > 1 else 1 # Assuming 115mm between the two yellow circles in real life
             return True
 
     def find_blob_center(self):   
@@ -192,14 +193,14 @@ class ImageProcessor:
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area > 500:
+            if area > 2000:
                 # Check circularity
                 perimeter = cv2.arcLength(cnt, True)
                 if perimeter > 0:
                     circularity = 4 * np.pi * area / (perimeter * perimeter)
 
                     # Only accept circular shapes (circularity > 0.7)
-                    if circularity > 0.7:
+                    if circularity > 0.65:
                         print(f"Detected yellow contour with area {area} and circularity {circularity:.2f}")
                         # Calculate centroid using moments
                         M = cv2.moments(cnt)

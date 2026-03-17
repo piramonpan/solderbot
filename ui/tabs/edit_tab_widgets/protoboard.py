@@ -110,6 +110,7 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             pos = event.scenePos()  # position in scene coordinates
 
             hole_x, hole_y = self.find_closest_hole(pos.x(), pos.y())
+            
 
             # check if hole is already selected
             if (hole_x, hole_y) not in self.points:
@@ -131,6 +132,7 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
                 print(f"Point stored: ({hole_x:.1f}, {hole_y:.1f})")
             else:
                 # erase circle if clicked again
+                print('debugg')
                 self.removeItem(self.circle)
 
                 # remove point coordinates
