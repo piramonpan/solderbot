@@ -31,7 +31,7 @@ class TakeImageThread(QThread):
         self.capture_requested = False
 
     def run(self):
-        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
@@ -49,7 +49,7 @@ class TakeImageThread(QThread):
                 continue
 
             ret, cv_img = cap.read()
-
+            
             if not (ret and cv_img is not None):
                 print("Failed to capture image from camera TOP.")
                 return
@@ -57,6 +57,8 @@ class TakeImageThread(QThread):
             if self.capture_requested:
                 self.capture_requested = False
                 self.image_captured_signal.emit(cv_img.copy())
+                cv2.imwrite("data/captured_image.jpg", cv_img) # save image to files
+                print("image saved!")
 
             h, w, _ = cv_img.shape
             preview_img = cv2.resize(

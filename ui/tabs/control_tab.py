@@ -200,6 +200,7 @@ class GCodeWorker(QObject):
 
         try:
             commands = [
+                str(2),
                 self.controller.writer.start_dispensing(
                     speed=200
                 ),  # HARD-CODED SPEED FOR TESTING
@@ -688,16 +689,18 @@ class ControlTab(QWidget):
         counter = 0
         for point in board_data.get("points", []):
             row, col = point[0], point[1]
-            if counter > 3:
-                self.request_clean.emit()
-                self.request_extruding.emit(False)
+            if counter > 2:
+                self.worker.execute_clean()
                 counter = 0
+                time.sleep(20)
 
             time.sleep(2)
             self.worker.execute_goto_grid_2(row-1, col-1)
             time.sleep(2)
-            self.worker.execute_custom_solder_2(extrude_time=0.6, hold_time=3)
+            self.worker.execute_custom_solder_2(extrude_time=0.35, hold_time=3)
             time.sleep(2)
+            self.request_jog.emit("Z", 1)
+            self.request_jog.emit("X", 1)
             self.request_jog.emit("Z", 10)
             time.sleep(2)
             counter += 1

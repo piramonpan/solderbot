@@ -9,7 +9,7 @@ from core.logger import setup_logger
 from core.grbl_controller import GRBLController
 from PyQt6.QtWidgets import QSizePolicy
 
-PORT = "COM5"  # change to correct port
+PORT = "COM9"  # change to correct port
 
 class SolderBotApp(QMainWindow):
     def __init__(self, test_mode):

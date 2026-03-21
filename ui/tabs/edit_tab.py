@@ -84,6 +84,9 @@ class BoardViewTab(QWidget):
             self.image_processor.valid_x,
         )
 
+    def image_on_board(self):
+        self.scene.load_background()
+
     def on_image_button(self, clicked):
         self.scene.load_background()
 
@@ -221,6 +224,7 @@ class BoardViewTab(QWidget):
             print(f"First hole pixel set to: {self.image_processor.first_hole_pixel}")
 
             self.image_processor.find_valleys(self.image_processor.keypoints)  # Re-run valley finding with updated first hole pixel
+            self.image_on_board()
             self.draw_board()  # Redraw board with updated hole positions
 
 class DisplayImageGroup(QGroupBox):
