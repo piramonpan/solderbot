@@ -52,6 +52,10 @@ class SolderBotApp(QMainWindow):
         self.ui_log_handler.new_record.connect(self.control_tab.log)
         self.logger.info("SolderBot Application Initialized.")
 
+        # SIGNALS #
+        self.tabs.currentChanged.connect(self.cameras_event)
+
+
     def set_up_sidebar(self):
         # --- 1. SIDEBAR FRAME ---
         self.sidebar = QFrame()
@@ -90,7 +94,14 @@ class SolderBotApp(QMainWindow):
         print("Toggling menu")
         UIAnimation.toggle_menu(self, self.sidebar)
 
-    
+    # deal with camera pause when switching tabs to prevent freezing and high CPU usage
+    def cameras_event(self):
+        if self.tabs.currentIndex() == 0: # Editor Tab
+            self.control_tab.camera_worker.is_paused = True
+        elif self.tabs.currentIndex() == 1: # Control Tab
+            print("Resuming camera....")
+            self.control_tab.camera_worker.is_paused = False
+
     def closeEvent(self, event):
         event.accept()
         pass

@@ -43,8 +43,7 @@ class GCodeWorker(QObject):
         if not self.controller:
             return
         self.log_requested.emit(f"Testing pan move to X:{x} Y:{y}")
-        x -= 0.5
-        y += 1.5
+
         try:
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
@@ -89,8 +88,8 @@ class GCodeWorker(QObject):
     @pyqtSlot()
     def execute_find_workspace(self):
         """Move to an estimated workspace location and set it as the new zero reference."""
-        x_val = 61
-        y_val = 105.5 
+        x_val = 61.5
+        y_val = 106
         z_val = -27
 
         commands = []
@@ -721,6 +720,10 @@ from PyQt6.QtGui import QImage
 class CameraWorker(QThread):
     frame_received = pyqtSignal(QImage)
 
+    def __init__(self):
+        super().__init__()
+        self.is_paused = False
+
     def run(self):
         cap = cv2.VideoCapture(-1, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
@@ -731,6 +734,17 @@ class CameraWorker(QThread):
             return
 
         while self.isRunning():
+            if self.is_paused:
+                cap.release()
+                while self.is_paused and self.isRunning():
+                    time.sleep(0.1)
+                if not self.isRunning():
+                    break
+                cap.open(0, cv2.CAP_DSHOW)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+                continue
+
             ret, frame = cap.read()
             if ret:
                 # 2. Define center based on actual frame size
