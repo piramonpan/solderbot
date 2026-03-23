@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPointF
 from PyQt6.QtGui import QPixmap, QPen, QColor, QImage, QFont
-
+import math
 
 class TakeImageThread(QThread):
     change_pixmap_signal = pyqtSignal(QImage)
@@ -45,7 +45,15 @@ class TakeImageThread(QThread):
 
         while self._run_flag:
             if self.is_paused:
-                time.sleep(0.5)
+                cap.release()
+                while self.is_paused and self._run_flag:
+                    time.sleep(0.1)
+                if not self._run_flag:
+                    break
+                cap.open(1, cv2.CAP_DSHOW)
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
                 continue
 
             ret, cv_img = cap.read()
@@ -88,6 +96,7 @@ class ImageSelector(QGraphicsView):
         self.zoom_factor = zoom_factor
         self.lens_size = lens_size
         self.first_hole_pixel = None
+        self.keypoints : list[cv2.KeyPoint] = None
 
         self.lens = QLabel()
         self.lens.setWindowFlags(
@@ -170,7 +179,17 @@ class ImageSelector(QGraphicsView):
             # Calculate the TRUE ROBOT point (1920x1080)
             true_x = display_point.x() * (self.cv_image.shape[1] / 800)
             true_y = display_point.y() * (self.cv_image.shape[0] / 450)
-            true_point = QPointF(true_x, true_y)
+            print(f"Clicked - Screen: ({display_point.x():.0f}, {display_point.y():.0f}) -> Robot: ({true_x:.0f}, {true_y:.0f})")
+
+            true_point = self.find_closest_point((true_x, true_y)) if self.keypoints else true_point
+
+            print(f"Adjusted to closest keypoint: ({true_point[0]:.0f}, {true_point[1]:.0f})")
+            # translate true point back to display coordinates for feedback dot
+            true_qpointf = QPointF(true_point[0], true_point[1])
+            display_x = true_qpointf.x() * (800 / self.cv_image.shape[1])
+            display_y = true_qpointf.y() * (450 / self.cv_image.shape[0])
+
+            display_point = QPointF(display_x, display_y)
 
             # Draw the dot on the 800x450 screen (for user feedback)
             self.current_dot = QGraphicsEllipseItem(
@@ -180,19 +199,29 @@ class ImageSelector(QGraphicsView):
             self.current_dot.setBrush(QColor(0, 255, 0, 150))
             self.scene().addItem(self.current_dot)
 
-            self.point_selected_signal.emit(true_point)
-            # print(f"Selection - Screen: ({display_point.x():.0f}, {display_point.y():.0f}) -> Robot: ({true_x:.0f}, {true_y:.0f})")
+            self.point_selected_signal.emit(true_qpointf)
 
-            self.first_hole_pixel = (
-                true_x,
-                true_y,
-            )  # Store the first hole pixel for later use
-
+            self.first_hole_pixel = true_point
+            print(f"First hole pixel set to: {self.first_hole_pixel}")
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
         self.lens.hide()
         super().leaveEvent(event)
+
+    def find_closest_point(self, first_hole):
+        min_dist = float('inf')
+        min_point: cv2.KeyPoint = None #type: ignore
+
+        for idx, point in enumerate(self.keypoints):
+            distance = math.dist(point.pt, first_hole)
+            if distance < min_dist:
+                min_dist = distance
+                min_point = point
+
+        print(f"Closest point to first hole: {min_point.pt} with distance {min_dist}")
+
+        return min_point.pt
 
 
 class CameraPage(QWidget):
@@ -331,7 +360,7 @@ class ImagePopUp(QMainWindow):
 
         self.page_sel.btn_confirm.clicked.connect(
             self.close_window
-        )  # Placeholder for actual confirm action
+        ) 
         self.stack.currentChanged.connect(self.on_page_change)
 
     def on_page_change(self, index):

@@ -17,9 +17,9 @@ import json
 from core.image_processing import ImageProcessor
 import cv2
 from PyQt6.QtCore import Qt
+import math
 
-IMG_PATH = r"C:\Users\piram\Desktop\opencv_test\images\TEST_10.jpg"
-
+IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_11.jpg"
 
 class BoardViewTab(QWidget):
     def __init__(self):
@@ -151,8 +151,8 @@ class BoardViewTab(QWidget):
         print(f"{filename} saved successfully!")
 
     def calculate_hole_number(self, x, y):
-        x_num = int((x - 3) / 20) + 1
-        y_num = int((y - 3) / 20) + 1
+        x_num = int((x - 3) / 22) + 1 # radius = 3, holespacing = 22
+        y_num = int((y - 3) / 22) + 1
 
         return y_num, x_num
 
@@ -194,16 +194,10 @@ class BoardViewTab(QWidget):
         rgb_frame = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
 
         #### IMAGE PROCESSING
-        ##### TODO: HARDCODED FOR TESTING ####
         self.cv_frame = cv_frame
-        
+
         self.image_processor = ImageProcessor(cv_frame)
         result = self.image_processor.find_pixel_locations()
-        if not result:
-            print("Failed to find pixel locations.")
-            self.popup.page_cal.btn_next.setEnabled(False)
-            return
-        
         self.image_processor.find_blob_center()
 
         #### REUTRN RGB FRAME WITH MARKERS DRAWN ON IT
@@ -213,14 +207,18 @@ class BoardViewTab(QWidget):
 
     def go_to_selector(self):
         # Step 2: Pass frame to Selector Page
+        self.popup.page_sel.view.keypoints = self.image_processor.keypoints
+
         if self.cv_frame is not None:
+            self.cv_frame = self.image_processor.image_copy # Replace with actual frame from camera for testing
             rgb_frame = cv2.cvtColor(self.cv_frame, cv2.COLOR_BGR2RGB)
             self.popup.page_sel.view.load_from_ndarray(rgb_frame)
             self.popup.stack.setCurrentIndex(2)
 
     def save_first_hole_pixel(self):
         if self.image_processor:
-            self.image_processor.first_hole_pixel = self.popup.page_sel.first_hole_pixel()
+            self.image_processor.first_hole_pixel = (self.popup.page_sel.first_hole_pixel())
+            # find nearest point 
             print(f"First hole pixel set to: {self.image_processor.first_hole_pixel}")
 
             self.image_processor.find_valleys(self.image_processor.keypoints)  # Re-run valley finding with updated first hole pixel
