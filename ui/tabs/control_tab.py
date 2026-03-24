@@ -38,17 +38,17 @@ class GCodeWorker(QObject):
         self.controller = gcode_controller
 
     @pyqtSlot(float, float)
-    def execute_pan_test(self, x, y):
+    def execute_pan_test(self, x, y, z):
     # Go to a point relative to workspace that we set to zero
         if not self.controller:
             return
-        self.log_requested.emit(f"Testing pan move to X:{x} Y:{y}")
+        self.log_requested.emit(f"Testing pan move to X:{x} Y:{y}, z:{z}")
 
         try:
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.set_workspace(),
-                self.controller.writer.rapid_positioning(x=x, y=y),
+                self.controller.writer.rapid_positioning(x=x, y=y, z=z),
             ]
             self.controller.send_commands(commands=commands)
         except Exception as e:
@@ -88,9 +88,11 @@ class GCodeWorker(QObject):
     @pyqtSlot()
     def execute_find_workspace(self):
         """Move to an estimated workspace location and set it as the new zero reference."""
-        x_val = 61.5
-        y_val = 106
-        z_val = -27
+        x_val = -80
+        y_val = 72.8
+        z_val = -10
+
+        print(f"Using Z value from board_data.json: {z_val}")  # Debugging output
 
         commands = []
 
@@ -371,7 +373,7 @@ class ControlTab(QWidget):
     request_return_start = pyqtSignal()
     request_extruding = pyqtSignal(bool)
     request_clean = pyqtSignal()
-    request_first_hole_pan = pyqtSignal(float, float)
+    request_first_hole_pan = pyqtSignal(float, float, float)
 
     def __init__(self, logger=logger, gcode_controller=None, testing=True):
         super().__init__()
@@ -386,7 +388,6 @@ class ControlTab(QWidget):
         self.esp32_available = self.esp32.ser is not None
         if not self.esp32_available:
             self.logger.warning("ESP32 not connected — Z-arm steps will be skipped.")
-        self.z_val = 0
 
         self.init_ui()
 
@@ -619,10 +620,28 @@ class ControlTab(QWidget):
 
         if match:
             # The third capturing group is our Z value
-            self.z_val = float(match.group(3))
-            print("Probed Z value:", self.z_val)
+            z_val = float(match.group(3))
+            print("Probed Z value:", z_val)
         else:
-            self.z_val = None
+            z_val = None
+
+        # Save z_val to example_board.json
+        filename = "board_data.json"
+        try:
+            with open(filename, "r") as f:
+                board_data = json.load(f)
+        except Exception as e:
+            print("Error loading example_board.json:", e)
+            board_data = {}
+
+        board_data['first_hole'][2] = z_val
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(board_data, f, indent=2)
+            print(f"Saved probed_z={z_val} to example_board.json")
+        except Exception as e:
+            print("Error saving example_board.json:", e)
+
         self.request_jog.emit("Z", 10)
         time.sleep(1)
         self.esp32.move_z_arm_up()
@@ -635,8 +654,8 @@ class ControlTab(QWidget):
 
     def extrude_button_clicked(self):
         try:
-            x, y = self.find_first_hole()
-            self.request_first_hole_pan.emit(x, -y)
+            x, y, z = self.find_first_hole()
+            self.request_first_hole_pan.emit(x, -y, z)
         except Exception as e:
             self.logger.error(f"Pan to first hole failed: {e}")
 
@@ -650,13 +669,17 @@ class ControlTab(QWidget):
                 data = json.load(f)
         except FileNotFoundError:
             self.logger.error("board_data.json not found — cannot locate first hole.")
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0
         except json.JSONDecodeError as e:
             self.logger.error(f"board_data.json is malformed: {e}")
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0
 
         pixel_first_hole_x = data.get("first_hole", [0, 0])[0]
         pixel_first_hole_y = data.get("first_hole", [0, 0])[1]
+        z_val = data.get("first_hole", [0, 0])[2] + 10
+
+        print("moving down from z:", z_val)
+        
         pixel_home_x, pixel_home_y = data.get("camera_pixel_zero", [0, 0])
         pixel_mm_ratio = data.get("pixel_mm_ratio", 1)
 
@@ -667,7 +690,7 @@ class ControlTab(QWidget):
         first_hole_move_x = round((pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio, 2)
         first_hole_move_y = round((pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio, 2)
         self.logger.info(f"First hole offset: X={first_hole_move_x}mm, Y={first_hole_move_y}mm")
-        return first_hole_move_x, first_hole_move_y
+        return first_hole_move_x, first_hole_move_y, z_val
         
 
     def start_soldering_sequence_clicked(self):
