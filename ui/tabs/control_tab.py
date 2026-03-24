@@ -392,6 +392,7 @@ class ControlTab(QWidget):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(25)
         self.esp32 = ESP32()
+        self.z_val = 0
         self.init_ui()
 
         # Threads
@@ -578,15 +579,13 @@ class ControlTab(QWidget):
 
     def probe_z_clicked(self):
         print("Probing Z height...")
-        #self.esp32.move_z_arm_down()
-        x_val = 142
-        y_val = 47
+
+        x_val = 136
+        y_val = 36
         commands = [self.worker.controller.writer.positioning(reference="relative"),
                     self.worker.controller.writer.rapid_positioning(x=x_val, y=y_val)]
-        
+
         self.worker.controller.send_commands(commands=commands)
-        
-        self.wait_for_user("ahhh")
 
         if not self.worker:
             return
@@ -594,24 +593,35 @@ class ControlTab(QWidget):
         try:
             command = self.worker.controller.writer.probe_z()
             self.worker.controller.send_commands(commands=[command])
+
+            # Wait for probe_z() G-code to finish by polling for 'Idle' state
+            timeout = 15  # seconds
+            waited = 0
+            while waited < timeout:
+                status = self.worker.controller.poll_grbl()
+                if "Idle" in status:
+                    break
+                time.sleep(0.2)
+                waited += 0.2
         except Exception as e:
             self.worker.log_requested.emit(f"G-Code Error: {str(e)}")
-        
-        time.sleep(0.5)
+            return
 
         raw_data = self.worker.controller.poll_grbl()
         match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
         print(match)
-        
+
         if match:
             # The third capturing group is our Z value
-            z_val = float(match.group(3))
-        print("Probed Z value:", z_val)
+            self.z_val = float(match.group(3))
+            print("Probed Z value:", self.z_val)
+        else:
+            self.z_val = None
         self.request_jog.emit("Z", 10)
         time.sleep(1)
         self.esp32.move_z_arm_up()
         pass
-
+        
     def clean_button_clicked(self):
         print("*Cleaning soldering iron tip...")
         self.request_clean.emit()

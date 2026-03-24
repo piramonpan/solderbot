@@ -46,10 +46,10 @@ class ESP32:
             print(f"Communication error: {e}")
             return None
         
-    def move_z_arm_down(self) :
+    def move_z_arm_down(self):
         response = self.send_message("MOVE_Z_DOWN")
         print(response)
-        if response == "ACK: Servo moved down":
+        if response == "ACK: Z-Axis Down":
             print(f"ESP32 Response: {response}")
             return True
         else:
@@ -58,7 +58,7 @@ class ESP32:
     
     def move_z_arm_up(self):
         response = self.send_message("MOVE_Z_UP")
-        if response == "ACK: Servo moved up":
+        if response == "ACK: Z-Axis Up":
             print(f"ESP32 Response: {response}")
         else:
             print("Failed to receive ACK from ESP32 for MOVE_Z_UP command.")
