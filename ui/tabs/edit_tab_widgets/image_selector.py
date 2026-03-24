@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPointF
 from PyQt6.QtGui import QPixmap, QPen, QColor, QImage, QFont
-
+import math
 
 class TakeImageThread(QThread):
     change_pixmap_signal = pyqtSignal(QImage)
@@ -37,19 +37,36 @@ class TakeImageThread(QThread):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         time.sleep(1)
 
+
+        if not cap.isOpened():
+                print("Error: Could not open video device.")
+        else:
+                print("Success: Camera is working!")
+
         while self._run_flag:
             if self.is_paused:
-                time.sleep(0.5)
+                cap.release()
+                while self.is_paused and self._run_flag:
+                    time.sleep(0.1)
+                if not self._run_flag:
+                    break
+                cap.open(1, cv2.CAP_DSHOW)
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
                 continue
 
             ret, cv_img = cap.read()
-
+            
             if not (ret and cv_img is not None):
-                continue
+                print("Failed to capture image from camera TOP.")
+                return
 
             if self.capture_requested:
                 self.capture_requested = False
                 self.image_captured_signal.emit(cv_img.copy())
+                cv2.imwrite("data/captured_image.jpg", cv_img) # save image to files
+                print("image saved!")
 
             h, w, _ = cv_img.shape
             preview_img = cv2.resize(
@@ -79,6 +96,7 @@ class ImageSelector(QGraphicsView):
         self.zoom_factor = zoom_factor
         self.lens_size = lens_size
         self.first_hole_pixel = None
+        self.keypoints : list[cv2.KeyPoint] = None
 
         self.lens = QLabel()
         self.lens.setWindowFlags(
@@ -161,7 +179,17 @@ class ImageSelector(QGraphicsView):
             # Calculate the TRUE ROBOT point (1920x1080)
             true_x = display_point.x() * (self.cv_image.shape[1] / 800)
             true_y = display_point.y() * (self.cv_image.shape[0] / 450)
-            true_point = QPointF(true_x, true_y)
+            print(f"Clicked - Screen: ({display_point.x():.0f}, {display_point.y():.0f}) -> Robot: ({true_x:.0f}, {true_y:.0f})")
+
+            true_point = self.find_closest_point((true_x, true_y)) if self.keypoints else true_point
+
+            print(f"Adjusted to closest keypoint: ({true_point[0]:.0f}, {true_point[1]:.0f})")
+            # translate true point back to display coordinates for feedback dot
+            true_qpointf = QPointF(true_point[0], true_point[1])
+            display_x = true_qpointf.x() * (800 / self.cv_image.shape[1])
+            display_y = true_qpointf.y() * (450 / self.cv_image.shape[0])
+
+            display_point = QPointF(display_x, display_y)
 
             # Draw the dot on the 800x450 screen (for user feedback)
             self.current_dot = QGraphicsEllipseItem(
@@ -171,19 +199,29 @@ class ImageSelector(QGraphicsView):
             self.current_dot.setBrush(QColor(0, 255, 0, 150))
             self.scene().addItem(self.current_dot)
 
-            self.point_selected_signal.emit(true_point)
-            # print(f"Selection - Screen: ({display_point.x():.0f}, {display_point.y():.0f}) -> Robot: ({true_x:.0f}, {true_y:.0f})")
+            self.point_selected_signal.emit(true_qpointf)
 
-            self.first_hole_pixel = (
-                true_x,
-                true_y,
-            )  # Store the first hole pixel for later use
-
+            self.first_hole_pixel = true_point
+            print(f"First hole pixel set to: {self.first_hole_pixel}")
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
         self.lens.hide()
         super().leaveEvent(event)
+
+    def find_closest_point(self, first_hole):
+        min_dist = float('inf')
+        min_point: cv2.KeyPoint = None #type: ignore
+
+        for idx, point in enumerate(self.keypoints):
+            distance = math.dist(point.pt, first_hole)
+            if distance < min_dist:
+                min_dist = distance
+                min_point = point
+
+        print(f"Closest point to first hole: {min_point.pt} with distance {min_dist}")
+
+        return min_point.pt
 
 
 class CameraPage(QWidget):
@@ -202,9 +240,8 @@ class CameraPage(QWidget):
         self.video_sink.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         controls = QHBoxLayout()
-        self.btn_capture = QPushButton("CAPTURE")
-        self.btn_capture.setFixedSize(300, 50)
-        self.btn_capture.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.btn_capture = QPushButton("Capture")
+        self.btn_capture.setFixedSize(140, 34)
         controls.addStretch()
         controls.addWidget(self.btn_capture)
         controls.addStretch()
@@ -235,10 +272,10 @@ class CalibrationPage(QWidget):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         controls = QHBoxLayout()
-        self.btn_back = QPushButton("RETAKE")
-        self.btn_next = QPushButton("PROCEED")
-        self.btn_back.setFixedSize(150, 50)
-        self.btn_next.setFixedSize(150, 50)
+        self.btn_back = QPushButton("Retake")
+        self.btn_next = QPushButton("Proceed")
+        self.btn_back.setFixedSize(110, 34)
+        self.btn_next.setFixedSize(110, 34)
         controls.addStretch()
         controls.addWidget(self.btn_back)
         controls.addWidget(self.btn_next)
@@ -273,11 +310,10 @@ class SelectorPage(QWidget):
         self.view.setStyleSheet("border: 1px solid #ccc; background-color: #f0f0f0;")
 
         controls = QHBoxLayout()
-        self.btn_back = QPushButton("BACK")
-        self.btn_confirm = QPushButton("CONFIRM")
-
-        self.btn_back.setFixedSize(150, 50)
-        self.btn_confirm.setFixedSize(150, 50)
+        self.btn_back = QPushButton("Back")
+        self.btn_confirm = QPushButton("Confirm")
+        self.btn_back.setFixedSize(110, 34)
+        self.btn_confirm.setFixedSize(110, 34)
         controls.addStretch()
         controls.addWidget(self.btn_back)
         controls.addWidget(self.btn_confirm)
@@ -293,13 +329,14 @@ class SelectorPage(QWidget):
 
 
 class ImagePopUp(QMainWindow):
+    image_captured_signal = pyqtSignal(object)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SolderBot Vision Control")
         self.resize(1100, 800)
 
         self.camera_thread = TakeImageThread()
-        self.camera_thread.start()
 
         self.stack = QStackedWidget()
         self.page_cam = CameraPage()
@@ -317,12 +354,13 @@ class ImagePopUp(QMainWindow):
 
         # Navigation Connections
         self.page_cam.btn_capture.clicked.connect(self.request_capture)
+        self.page_cal.btn_back.clicked.connect(lambda: self.page_cal.btn_next.setEnabled(True)) 
         self.page_cal.btn_back.clicked.connect(lambda: self.stack.setCurrentIndex(0))
         self.page_sel.btn_back.clicked.connect(lambda: self.stack.setCurrentIndex(1))
 
         self.page_sel.btn_confirm.clicked.connect(
             self.close_window
-        )  # Placeholder for actual confirm action
+        ) 
         self.stack.currentChanged.connect(self.on_page_change)
 
     def on_page_change(self, index):
@@ -339,6 +377,7 @@ class ImagePopUp(QMainWindow):
     def handle_capture(self, cv_frame):
         self.page_cal.update_preview(cv_frame)
         self.stack.setCurrentIndex(1)
+        self.image_captured_signal.emit(cv_frame)
 
     def go_to_selector(self):
         frame = self.page_cal.current_frame
@@ -347,10 +386,21 @@ class ImagePopUp(QMainWindow):
             self.page_sel.view.load_from_ndarray(rgb_frame)
             self.stack.setCurrentIndex(2)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self.camera_thread.isRunning():
+            self.camera_thread = TakeImageThread()
+            self.camera_thread.change_pixmap_signal.connect(self.update_video)
+            self.camera_thread.image_captured_signal.connect(self.handle_capture)
+            self.camera_thread.start()
+
     def close_window(self):
         self.close()
 
     def closeEvent(self, event):
+        self.camera_thread._run_flag = False
+        self.camera_thread.quit()
+        self.camera_thread.wait()
         event.accept()
 
 

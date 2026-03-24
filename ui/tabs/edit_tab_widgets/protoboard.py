@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 from PyQt6.QtWidgets import (
     QGraphicsScene,
     QGraphicsEllipseItem,
@@ -6,7 +8,7 @@ from PyQt6.QtWidgets import (
     QGraphicsLineItem
 )
 from PyQt6.QtGui import QPen, QColor, QBrush, QPixmap
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QRect
 
 PIXEL_TO_MM = 27.5  ## 2.54 mm hole spacing
 SPACING = 18
@@ -21,7 +23,7 @@ class ProtoBoardScene(QGraphicsScene):
         super().__init__(parent)
         self.rows = 0
         self.cols = 0
-        self.hole_spacing = 20  # pixels between holes
+        self.hole_spacing = 22  # pixels between holes
         self.hole_radius = 3
         self.image_item = None
 
@@ -29,10 +31,34 @@ class ProtoBoardScene(QGraphicsScene):
         self.solder_holes = []
         self.solder_lines = []
 
+    '''def find_background_holes(pixmap: QPixmap):
+        qimage = pixmap.toImage()
+        cv_img = cv2.imread(img_path)
+        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (9, 9), 1.5)
+
+        circles = cv2.HoughCircles(
+            gray,
+            cv2.HOUGH_GRADIENT,
+            dp=1.2,
+            minDist=20,
+            param1=50,
+            param2=30,
+            minRadius=10,
+            maxRadius=50
+        )
+
+        centers = []
+
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            for (x, y, r) in circles:
+                centers.append((x, y))'''
+
     def load_background(
         self,
-        image_path=r"C:\Users\piram\Desktop\igen430\data\test_images\nov2.jpg",
-        opacity=1,
+        image_path="data/captured_image.jpg",
+        opacity=0.5,
     ):
         self.clear()
 
@@ -43,35 +69,37 @@ class ProtoBoardScene(QGraphicsScene):
             print("Failed to load image:", image_path)
             return
 
-        max_width = 500
-        max_height = 400
+        rect = QRect(550, 0, 800, 650)
+        pixmap = pixmap.copy(rect)
+        #max_width = 800
+        #max_height = 500
 
-        pixmap = pixmap.scaled(
-            max_width,
-            max_height,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
+        #pixmap = pixmap.scaled(
+        #    max_width,
+        #    max_height,
+        #    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        #    Qt.TransformationMode.SmoothTransformation,
+        #)
 
         self.image_item = QGraphicsPixmapItem(pixmap)
-        self.image_item.setFlags(
-            QGraphicsItem.GraphicsItemFlag.ItemIsMovable  # allow dragging
-            | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
-        )
+        #self.image_item.setFlags(
+        #    QGraphicsItem.GraphicsItemFlag.ItemIsMovable  # allow dragging
+        #    | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+        #)
         self.image_item.setOpacity(opacity)  # semi-transparent
-        self.image_item.setZValue(0)  # background layer
+        self.image_item.setZValue(1)  # background layer
         self.addItem(self.image_item)
 
     def draw_board(self, num_rows, num_cols, valid_rows, valid_cols):
-        self.clear()
+        #self.clear()
 
         self.row = num_rows
         self.col = num_cols
 
         for i in range(self.row):
             for j in range(self.col):
-                x = j * self.hole_spacing
-                y = i * self.hole_spacing
+                x = (j * self.hole_spacing) + 75
+                y = (i * self.hole_spacing) + 80
                 hole = QGraphicsEllipseItem(
                     x - self.hole_radius,
                     y - self.hole_radius,
@@ -82,7 +110,7 @@ class ProtoBoardScene(QGraphicsScene):
                 hole.setPen(QPen(Qt.GlobalColor.black, 1.2))
                 no_brush = QBrush(Qt.BrushStyle.NoBrush)
                 hole.setBrush(no_brush)
-                hole.setZValue(1)
+                hole.setZValue(2)
 
                 if j in valid_cols and i in valid_rows:
                     self.addItem(hole)
@@ -103,6 +131,7 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
         self.add_point_mode = False
         self.add_line_mode = False
 
+        self.circles = []
         self.circle = None
 
     def mousePressEvent(self, event):
@@ -111,9 +140,6 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
 
             hole_x, hole_y = self.find_closest_hole(pos.x(), pos.y())
             
-            if (hole_x, hole_y) in self.points:
-                print(f"Point already exist ({hole_x}, {hole_y})")
-                return
 
             # check if hole is already selected
             if (hole_x, hole_y) not in self.points:
@@ -129,16 +155,22 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
                 self.circle.setZValue(2)  # above protoboard
 
                 self.addItem(self.circle)
+                self.circles.append(self.circle)
 
                 # Store the point coordinates
                 self.points.append((hole_x, hole_y))
                 print(f"Point stored: ({hole_x:.1f}, {hole_y:.1f})")
             else:
                 # erase circle if clicked again
-                self.removeItem(self.circle)
+                index = self.points.index((hole_x, hole_y))
+                circle_to_remove = self.circles[index]
+                self.removeItem(circle_to_remove)
+                print("circle removed")
+                self.circles.remove(circle_to_remove)
 
                 # remove point coordinates
                 self.points.remove((hole_x, hole_y))
+                print("coord removed")
 
         # TODO: add line removal
         if event.button() == Qt.MouseButton.LeftButton and self.add_line_mode:

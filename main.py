@@ -9,7 +9,11 @@ from core.logger import setup_logger
 from core.grbl_controller import GRBLController
 from PyQt6.QtWidgets import QSizePolicy
 
+<<<<<<< HEAD
 PORT = "COM4"  # change to correct port
+=======
+PORT = "COM9"  # change to correct port
+>>>>>>> test_may16
 
 class SolderBotApp(QMainWindow):
     def __init__(self, test_mode):
@@ -49,8 +53,12 @@ class SolderBotApp(QMainWindow):
         self.layout.addWidget(self.tabs)
 
         ### SETUP LOGGING ###
-        # self.ui_log_handler.new_record.connect(self.control_tab.log) # when handler recieve a new log, it emit a signal and send to control tab log panel
+        self.ui_log_handler.new_record.connect(self.control_tab.log)
         self.logger.info("SolderBot Application Initialized.")
+
+        # SIGNALS #
+        self.tabs.currentChanged.connect(self.cameras_event)
+
 
     def set_up_sidebar(self):
         # --- 1. SIDEBAR FRAME ---
@@ -90,7 +98,14 @@ class SolderBotApp(QMainWindow):
         print("Toggling menu")
         UIAnimation.toggle_menu(self, self.sidebar)
 
-    
+    # deal with camera pause when switching tabs to prevent freezing and high CPU usage
+    def cameras_event(self):
+        if self.tabs.currentIndex() == 0: # Editor Tab
+            self.control_tab.camera_worker.is_paused = True
+        elif self.tabs.currentIndex() == 1: # Control Tab
+            print("Resuming camera....")
+            self.control_tab.camera_worker.is_paused = False
+
     def closeEvent(self, event):
         event.accept()
         pass
