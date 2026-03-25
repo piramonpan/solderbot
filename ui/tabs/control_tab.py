@@ -37,7 +37,7 @@ class GCodeWorker(QObject):
         super().__init__()
         self.controller = gcode_controller
 
-    @pyqtSlot(float, float)
+    @pyqtSlot(float, float, float)
     def execute_pan_test(self, x, y, z):
     # Go to a point relative to workspace that we set to zero
         if not self.controller:
@@ -48,7 +48,8 @@ class GCodeWorker(QObject):
             commands = [
                 self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.set_workspace(),
-                self.controller.writer.rapid_positioning(x=x, y=y, z=z),
+                self.controller.writer.rapid_positioning(x=x, y=y),
+                self.controller.writer.move_up_down(z=z)
             ]
             self.controller.send_commands(commands=commands)
         except Exception as e:
@@ -685,7 +686,7 @@ class ControlTab(QWidget):
 
         if not pixel_mm_ratio:
             self.logger.error("pixel_mm_ratio is zero — cannot calculate real-world coordinates.")
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0
 
         first_hole_move_x = round((pixel_first_hole_x - pixel_home_x) / pixel_mm_ratio, 2)
         first_hole_move_y = round((pixel_first_hole_y - pixel_home_y) / pixel_mm_ratio, 2)
