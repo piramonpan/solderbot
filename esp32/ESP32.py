@@ -60,11 +60,41 @@ class ESP32:
         else:
             print("Failed to receive ACK from ESP32 for MOVE_Z_UP command.")
             return False
+        
+    def turn_on_soldering_iron(self):
+        response = self.send_message("IRON_ON")
+        if response == "ACK: IRON_ON":
+            print(f"ESP32 Response: {response}")
+            return True
+        else:
+            print("Failed to receive ACK from ESP32 for IRON_ON command.")
+            return False
+        
+    def turn_off_soldering_iron(self):
+        response = self.send_message("IRON_OFF")
+        if response == "ACK: IRON_OFF":
+            print(f"ESP32 Response: {response}")
+            return True
+        else:
+            print("Failed to receive ACK from ESP32 for IRON_ON command.")
+            return False
+        
+    def set_temp(self, temperature: int):
+        response = self.send_message(f"SET_TEMP_{temperature}")
+        if response == f"ACK: TEMP_SET {temperature}":
+            print(f"ESP32 Response: {response}")
+            return True
+        else:
+            print("Failed to receive ACK from ESP32 for SET_TEMP command.")
+            return False
 
     def close(self):
         if self.ser:
             self.ser.close()
             print("Connection closed.")
+
+    def connected(self):
+        return self.ser is not None
 
 if __name__ == "__main__":
     esp32 = ESP32()

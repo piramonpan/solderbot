@@ -24,7 +24,6 @@ from core.grbl_controller import GRBLController
 import json
 import os
 from PyQt6.QtWidgets import QMessageBox
-from esp32.ESP32 import ESP32
 import re
 
 logger = logging.getLogger("SolderBot")
@@ -376,7 +375,7 @@ class ControlTab(QWidget):
     request_clean = pyqtSignal()
     request_first_hole_pan = pyqtSignal(float, float, float)
 
-    def __init__(self, logger=logger, gcode_controller=None, testing=True):
+    def __init__(self, logger=logger, gcode_controller=None, esp32_controller =None, testing=True):
         super().__init__()
         self.gcode_controller = gcode_controller
         self.logger = logger
@@ -385,10 +384,7 @@ class ControlTab(QWidget):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(25)
 
-        self.esp32 = ESP32()
-        self.esp32_available = self.esp32.ser is not None
-        if not self.esp32_available:
-            self.logger.warning("ESP32 not connected — Z-arm steps will be skipped.")
+        self.esp32 = esp32_controller
 
         self.init_ui()
 
@@ -487,6 +483,27 @@ class ControlTab(QWidget):
             disp_layout.addWidget(btn)
         disp_group.setLayout(disp_layout)
 
+        # --- Temperature Control Group ---
+        temp_group = QGroupBox("Temperature Control")
+        temp_layout = QVBoxLayout()
+        self.btn_iron_on = QPushButton("Iron On")
+        self.btn_iron_off = QPushButton("Iron Off")
+        temp_btn_layout = QHBoxLayout()
+        temp_btn_layout.addWidget(self.btn_iron_on)
+        temp_btn_layout.addWidget(self.btn_iron_off)
+        temp_layout.addLayout(temp_btn_layout)
+        temp_set_layout = QHBoxLayout()
+        self.spin_temp = QSpinBox()
+        self.spin_temp.setRange(100, 500)
+        self.spin_temp.setValue(350)
+        self.spin_temp.setSuffix(" °C")
+        self.btn_set_temp = QPushButton("Set Temp")
+        temp_set_layout.addWidget(QLabel("Set Temperature:"))
+        temp_set_layout.addWidget(self.spin_temp)
+        temp_set_layout.addWidget(self.btn_set_temp)
+        temp_layout.addLayout(temp_set_layout)
+        temp_group.setLayout(temp_layout)
+
         # Reserved / inactive buttons (wired in connect_buttons)
         self.btn_start = QPushButton("Start Sequence")
         self.btn_stop = QPushButton("Emergency Stop")
@@ -495,6 +512,7 @@ class ControlTab(QWidget):
 
         right_panel.addWidget(self.jog_widget)
         right_panel.addWidget(setup_group)
+        right_panel.addWidget(temp_group)
         right_panel.addWidget(disp_group)
         right_panel.addStretch()
         right_panel.addWidget(self.start_soldering_sequence)
@@ -527,6 +545,42 @@ class ControlTab(QWidget):
         self.btn_stop_extrude.clicked.connect(self.stop_extrude_button_clicked)
 
         self.btn_start.clicked.connect(lambda: self.request_soldering.emit())
+
+        # Temperature Control Buttons
+        self.btn_iron_on.clicked.connect(self.iron_on_clicked)
+        self.btn_iron_off.clicked.connect(self.iron_off_clicked)
+        self.btn_set_temp.clicked.connect(self.set_temp_clicked)
+
+    def iron_on_clicked(self):
+        if self.esp32 and self.esp32.connected():
+            success = self.esp32.turn_on_soldering_iron()
+            if success:
+                self.logger.info("Soldering iron turned ON.")
+            else:
+                self.logger.error("Failed to turn ON soldering iron.")
+        else:
+            self.logger.error("ESP32 not connected.")
+
+    def iron_off_clicked(self):
+        if self.esp32 and self.esp32.connected():
+            success = self.esp32.turn_off_soldering_iron()
+            if success:
+                self.logger.info("Soldering iron turned OFF.")
+            else:
+                self.logger.error("Failed to turn OFF soldering iron.")
+        else:
+            self.logger.error("ESP32 not connected.")
+
+    def set_temp_clicked(self):
+        if self.esp32 and self.esp32.connected():
+            temp = self.spin_temp.value()
+            success = self.esp32.set_temp(temp)
+            if success:
+                self.logger.info(f"Set soldering iron temperature to {temp}°C.")
+            else:
+                self.logger.error("Failed to set soldering iron temperature.")
+        else:
+            self.logger.error("ESP32 not connected.")
 
     def issue_jog(self, axis, direction):
         step = float(self.jog_widget.step_size) * direction
@@ -578,7 +632,7 @@ class ControlTab(QWidget):
         self.btn_set_zero.setEnabled(False)
         self.jog_widget.setEnabled(True)
 
-        if self.esp32_available:
+        if self.esp32.connected():
             self.esp32.move_z_arm_down()
         else:
             self.logger.warning("ESP32 unavailable — skipping Z-arm lower before home.")

@@ -8,6 +8,7 @@ from ui.ui_animation import UIAnimation
 from core.logger import setup_logger
 from core.grbl_controller import GRBLController
 from PyQt6.QtWidgets import QSizePolicy
+from esp32.ESP32 import ESP32
 
 PORT = "COM4"  # change to correct port
 
@@ -27,6 +28,14 @@ class SolderBotApp(QMainWindow):
         else:
             self.logger.error(f"Failed to connect to GRBL Controller on {PORT}.")
             self.grbl_controller = None
+
+        ## SETUP ESP32 CONTROLLER ##
+        self.esp32 = ESP32()
+        esp32_available = self.esp32.ser is not None
+        if esp32_available:
+            self.logger.info("ESP32 connected successfully.")
+        else:
+            self.logger.warning("ESP32 not connected — Z-arm steps will be skipped.")
         
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -41,7 +50,7 @@ class SolderBotApp(QMainWindow):
         self.tabs.addWidget(self.editor_tab)
 
         # Control Tab
-        self.control_tab = ControlTab(logger=self.logger, gcode_controller=self.grbl_controller, testing=test_mode)
+        self.control_tab = ControlTab(logger=self.logger, gcode_controller=self.grbl_controller, esp32_controller=self.esp32, testing=test_mode)
         self.tabs.addWidget(self.control_tab)
 
          # Add to main layout
