@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import math
 
-IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_14.jpg"  # Update this to your image path
+IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_11.jpg"  # Update this to your image path
 
 
 class ImageProcessor:
@@ -27,28 +27,52 @@ class ImageProcessor:
             []
         )  # List of (x, y) tuples for detected yellow circles
 
+        # ArUco marker detection results
+        self.aruco_centers = []  # List of (x, y) tuples for detected ArUco marker centers
+        self.aruco_ids = []      # List of marker IDs corresponding to aruco_centers
+
     def find_pixel_locations(self):
         #  x , y = self.detect_orange_markers()
         #  corner_x, _ = self.detect_blue_markers()
 
-        hole_centers = self.detect_yellow_circles()
-        print(f"Yellow circle centers: {hole_centers}")
+        arucos = self.detect_aruco_markers()
 
-        if len(hole_centers) != 2:
+        print(f"ArUco corners: {arucos}")
+        print(f"ArUco marker centers: {self.aruco_centers}, IDs: {self.aruco_ids}")
+
+        if len(arucos) != 2:
             print(
-                f"Warning: Expected to find 2 yellow circles for calibration, but found {len(hole_centers)}"
+                f"Warning: Expected to find 2 ArUco markers for calibration, but found {len(arucos)}"
             )
             return False
-
         else:
-            self.pixel_home = min(hole_centers, key=lambda pt: pt[0])
+            self.pixel_home = arucos[0]  # top-left corner of left marker
+            pixel_top_right = arucos[1]   # top-right corner of right marker
 
-            self.pixel_mm_ratio = (
-                math.fabs(hole_centers[0][0] - hole_centers[1][0]) / 110.0
-                if len(hole_centers) > 1
-                else 1
-            )  # Assuming 115mm between the two yellow circles in real life
+            # Assuming the real-world distance between these two corners is 110mm (adjust if needed)
+            self.pixel_mm_ratio = math.fabs(pixel_top_right[0] - self.pixel_home[0]) / 112.0
+
+            print(f"Calibrated pixel home: {self.pixel_home}, pixel-mm ratio: {self.pixel_mm_ratio:.2f} mm/px")
             return True
+
+        # hole_centers = self.detect_yellow_circles()
+        # print(f"Yellow circle centers: {hole_centers}")
+
+        # if len(hole_centers) != 2:
+        #     print(
+        #         f"Warning: Expected to find 2 yellow circles for calibration, but found {len(hole_centers)}"
+        #     )
+        #     return False
+
+        # else:
+        #     self.pixel_home = min(hole_centers, key=lambda pt: pt[0])
+
+        #     self.pixel_mm_ratio = (
+        #         math.fabs(hole_centers[0][0] - hole_centers[1][0]) / 110.0
+        #         if len(hole_centers) > 1
+        #         else 1
+        #     )  # Assuming 115mm between the two yellow circles in real life
+        #     return True
 
     def find_blob_center(self):
         # 1. Load and Pre-process
@@ -270,6 +294,80 @@ class ImageProcessor:
                 )
 
         return self.yellow_circle_centers
+
+
+    def detect_aruco_markers(self, aruco_dict_type=cv2.aruco.DICT_4X4_50):
+        """
+        Detects two ArUco markers from the image.
+        Returns [top_left_corner_of_left_marker, top_right_corner_of_right_marker]
+        as (x, y) tuples, where left/right is determined by each marker's center x.
+
+        OpenCV corner order per marker: [top-left, top-right, bottom-right, bottom-left]
+        """
+        self.aruco_centers = []
+        self.aruco_ids = []
+
+        gray = cv2.cvtColor(self.image_copy, cv2.COLOR_BGR2GRAY)
+
+        aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_dict_type)
+        parameters = cv2.aruco.DetectorParameters()
+        detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+
+        corners, ids, _ = detector.detectMarkers(gray)
+
+        # Show image with detected markers for debugging
+        if self.verbose:
+            self.image_copy = cv2.aruco.drawDetectedMarkers(self.image_copy, corners, ids)
+            cv2.imshow("ArUco Detection", self.image_copy)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
+        if ids is None or len(ids) < 2:
+            print(f"Warning: Expected 2 ArUco markers, found {0 if ids is None else len(ids)}")
+            return []
+
+        # Collect all markers with their corners and center x
+        markers = []
+        for i, corner in enumerate(corners):
+            pts = corner[0]  # shape (4, 2): TL, TR, BR, BL
+            cx = float(np.mean(pts[:, 0]))
+            marker_id = int(ids[i][0])
+            markers.append((cx, marker_id, pts))
+            self.aruco_ids.append(marker_id)
+            self.aruco_centers.append((int(cx), int(np.mean(pts[:, 1]))))
+
+        # Sort by center x: index 0 = left marker, index 1 = right marker
+        markers.sort(key=lambda m: m[0])
+        left_pts  = markers[0][2]
+        right_pts = markers[1][2]
+
+        top_left_of_left   = (int(left_pts[0][0]),  int(left_pts[0][1]))   # TL corner
+        top_right_of_right = (int(right_pts[1][0]), int(right_pts[1][1]))  # TR corner
+
+        # Draw visualization
+        for cx, marker_id, pts in markers:
+            cv2.polylines(self.image_copy, [pts.astype(int)], True, (0, 0, 255), 2)
+            cv2.putText(
+                self.image_copy,
+                f"ArUco {marker_id}",
+                (int(cx) - 20, int(np.mean(pts[:, 1])) - 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                2,
+            )
+
+        cv2.circle(self.image_copy, top_left_of_left,   5, (0, 0, 255), -1)
+        cv2.circle(self.image_copy, top_right_of_right, 5, (0, 0, 255), -1)
+
+        if self.verbose:
+            print(f"Left marker  (ID={markers[0][1]}) top-left corner:  {top_left_of_left}")
+            print(f"Right marker (ID={markers[1][1]}) top-right corner: {top_right_of_right}")
+            cv2.imshow("ArUco Detection", self.image_copy)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
+        return [top_left_of_left, top_right_of_right]
 
 
 if __name__ == "__main__":

@@ -33,9 +33,10 @@ logger = logging.getLogger("SolderBot")
 class GCodeWorker(QObject):
     log_requested = pyqtSignal(str)
 
-    def __init__(self, gcode_controller: GRBLController):
+    def __init__(self, gcode_controller: GRBLController, esp32=None):
         super().__init__()
         self.controller = gcode_controller
+        self.esp32 = esp32
 
     @pyqtSlot(float, float, float)
     def execute_pan_test(self, x, y, z):
@@ -89,8 +90,8 @@ class GCodeWorker(QObject):
     @pyqtSlot()
     def execute_find_workspace(self):
         """Move to an estimated workspace location and set it as the new zero reference."""
-        x_val = -80
-        y_val = 72.8
+        x_val = -78
+        y_val = 69.8
         z_val = -10
 
         print(f"Using Z value from board_data.json: {z_val}")  # Debugging output
@@ -236,6 +237,51 @@ class GCodeWorker(QObject):
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
 
+    @pyqtSlot(str)
+    def execute_start_soldering_sequence(self, board_data_path):
+        try:
+            with open(board_data_path, 'r') as f:
+                board_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.log_requested.emit(f"Board data error: {e}")
+            return
+
+        self.log_requested.emit("Starting soldering sequence...")
+        time.sleep(1)
+
+        # Jog Z up before starting
+        commands = [
+            self.controller.writer.positioning(reference="relative"),
+            self.controller.writer.move_up_down(z=10),
+        ]
+        self.controller.send_commands(commands=commands)
+
+        counter = 0
+        for point in board_data.get("points", []):
+            row, col = point[0], point[1]
+            if counter > 2:
+                self.execute_clean()
+                counter = 0
+                time.sleep(20)
+
+            time.sleep(2)
+            self.execute_goto_grid_2(row - 1, col - 1)
+            time.sleep(2)
+            self.execute_custom_solder_2(extrude_time=0.5, hold_time=6)
+            time.sleep(2)
+
+            jog_cmds = [
+                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.move_up_down(z=1),
+                self.controller.writer.rapid_positioning(x=1, y=None),
+                self.controller.writer.move_up_down(z=9),
+            ]
+            self.controller.send_commands(commands=jog_cmds)
+            time.sleep(2)
+            counter += 1
+
+        self.log_requested.emit("Soldering sequence complete.")
+
     @pyqtSlot()
     def execute_soldering(self):
         if not self.controller:
@@ -285,6 +331,79 @@ class GCodeWorker(QObject):
             self.controller.send_commands(commands=command)
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
+
+    @pyqtSlot()
+    def execute_full_setup(self):
+        """Run home → probe Z → find workspace sequentially in the worker thread."""
+        if not self.controller:
+            return
+
+        # Step 1: Home
+        self.log_requested.emit("Full setup (1/3): Homing all axes...")
+        try:
+            if self.esp32:
+                self.esp32.move_z_arm_down()
+            command = self.controller.writer.home_axis(axis="all")
+            self.controller.send_commands(commands=[command])
+            timeout, waited = 30, 0
+            while waited < timeout:
+                if "Idle" in self.controller.poll_grbl():
+                    break
+                time.sleep(0.2)
+                waited += 0.2
+        except Exception as e:
+            self.log_requested.emit(f"Home error: {str(e)}")
+            return
+
+        # Step 2: Probe Z
+        self.log_requested.emit("Full setup (2/3): Probing Z height...")
+        try:
+            commands = [
+                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.rapid_positioning(x=136, y=36),
+            ]
+            self.controller.send_commands(commands=commands)
+
+            self.controller.send_commands(commands=[self.controller.writer.probe_z()])
+            timeout, waited = 15, 0
+            while waited < timeout:
+                if "Idle" in self.controller.poll_grbl():
+                    break
+                time.sleep(0.2)
+                waited += 0.2
+        except Exception as e:
+            self.log_requested.emit(f"Probe Z error: {str(e)}")
+            return
+
+        raw_data = self.controller.poll_grbl()
+        match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
+        z_val = float(match.group(3)) if match else None
+        self.log_requested.emit(f"Probed Z: {z_val}" if z_val is not None else "Warning: could not parse Z")
+
+        try:
+            with open("board_data.json", "r") as f:
+                board_data = json.load(f)
+            board_data['first_hole'][2] = z_val
+            with open("board_data.json", "w", encoding="utf-8") as f:
+                json.dump(board_data, f, indent=2)
+        except Exception as e:
+            self.log_requested.emit(f"Error saving board data: {str(e)}")
+
+        try:
+            self.controller.send_commands(commands=[
+                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.move_up_down(z=10),
+            ])
+            time.sleep(1)
+        except Exception as e:
+            self.log_requested.emit(f"Z jog error: {str(e)}")
+
+        if self.esp32:
+            self.esp32.move_z_arm_up()
+
+        # Step 3: Find Workspace
+        self.log_requested.emit("Full setup (3/3): Finding workspace...")
+        self.execute_find_workspace()
 
 
 class JogControlPanel(QWidget):
@@ -375,6 +494,8 @@ class ControlTab(QWidget):
     request_extruding = pyqtSignal(bool)
     request_clean = pyqtSignal()
     request_first_hole_pan = pyqtSignal(float, float, float)
+    request_full_setup = pyqtSignal()
+    request_start_soldering_sequence = pyqtSignal(str)
 
     def __init__(self, logger=logger, gcode_controller=None, testing=True):
         super().__init__()
@@ -399,7 +520,7 @@ class ControlTab(QWidget):
 
         if self.gcode_controller or testing:
             self.gcode_thread = QThread()
-            self.worker = GCodeWorker(self.gcode_controller)
+            self.worker = GCodeWorker(self.gcode_controller, esp32=self.esp32)
             self.worker.moveToThread(self.gcode_thread)
 
             # Connect signals to worker slots 
@@ -416,15 +537,17 @@ class ControlTab(QWidget):
             self.request_extruding.connect(self.worker.execute_extruding)
             self.request_clean.connect(self.worker.execute_clean)
             self.request_first_hole_pan.connect(self.worker.execute_pan_test)
+            self.request_full_setup.connect(self.worker.execute_full_setup)
+            self.request_start_soldering_sequence.connect(self.worker.execute_start_soldering_sequence)
             self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
 
             self.gcode_thread.start()
             self.connect_buttons()
 
         self.jog_widget.setEnabled(True)
-        self.btn_return_start.setEnabled(False)
-        self.btn_set_zero.setEnabled(False)
-        self.go_first.setEnabled(False)
+        self.btn_return_start.setEnabled(True)
+        self.btn_set_zero.setEnabled(True)
+        self.go_first.setEnabled(True)
 
     def init_ui(self):
         # LEFT COLUMN
@@ -471,8 +594,9 @@ class ControlTab(QWidget):
         self.btn_set_zero = QPushButton("Set Zero")
         self.btn_return_start = QPushButton("Return to Start")
         self.btn_probe_z = QPushButton("Probe Z")
+        self.btn_full_setup = QPushButton("Full Setup (Home → Probe → Workspace)")
         for btn in [self.home_start, self.go_first, self.btn_set_zero,
-                    self.btn_return_start, self.btn_probe_z]:
+                    self.btn_return_start, self.btn_probe_z, self.btn_full_setup]:
             setup_layout.addWidget(btn)
         setup_group.setLayout(setup_layout)
 
@@ -525,6 +649,7 @@ class ControlTab(QWidget):
         self.btn_probe_z.clicked.connect(self.probe_z_clicked)
         self.go_first.clicked.connect(self.find_workspace_button_clicked)
         self.btn_stop_extrude.clicked.connect(self.stop_extrude_button_clicked)
+        self.btn_full_setup.clicked.connect(lambda: self.request_full_setup.emit())
 
         self.btn_start.clicked.connect(lambda: self.request_soldering.emit())
 
@@ -563,9 +688,28 @@ class ControlTab(QWidget):
             pixmap.scaled(self.primary_feed.size(), Qt.AspectRatioMode.KeepAspectRatio)
         )
 
+        # Zoom feed: crop 1/10 of the frame around the crosshair center and scale to zoom_feed size
+        img_w = q_image.width()
+        img_h = q_image.height()
+        crop_w = max(1, img_w // 10)
+        crop_h = max(1, img_h // 10)
+        cx = img_w // 2 + 230
+        cy = img_h // 2 - 155
+        x1 = max(0, cx - crop_w // 2)
+        y1 = max(0, cy - crop_h // 2)
+        cropped = pixmap.copy(x1, y1, crop_w, crop_h)
+        self.zoom_feed.setPixmap(
+            cropped.scaled(self.zoom_feed.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        )
+
+        # Keep zoom_feed anchored to top-left of primary_feed and on top
+        margin = 8
+        self.zoom_feed.move(margin, margin)
+        self.zoom_feed.raise_()
+
     def find_workspace_button_clicked(self):
         self.logger.info("Finding workspace...")
-        self.go_first.setEnabled(False)
+        self.go_first.setEnabled(True)
         self.btn_return_start.setEnabled(True)
         self.btn_set_zero.setEnabled(True)
         self.jog_widget.setEnabled(True)
@@ -574,8 +718,8 @@ class ControlTab(QWidget):
     def home_button_clicked(self):
         self.logger.info("Homing robot...")
         self.go_first.setEnabled(True)
-        self.btn_return_start.setEnabled(False)
-        self.btn_set_zero.setEnabled(False)
+        self.btn_return_start.setEnabled(True)
+        self.btn_set_zero.setEnabled(True)
         self.jog_widget.setEnabled(True)
 
         if self.esp32_available:
@@ -702,38 +846,7 @@ class ControlTab(QWidget):
         board_data_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), '../../board_data.json')
         )
-        try:
-            with open(board_data_path, 'r') as f:
-                board_data = json.load(f)
-        except FileNotFoundError:
-            self.logger.error(f"Board data not found: {board_data_path}")
-            return
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Board data malformed: {e}")
-            return
-
-        self.logger.info("Starting soldering sequence...")
-        time.sleep(1)
-        self.request_jog.emit("Z", 10)
-
-        counter = 0
-        for point in board_data.get("points", []):
-            row, col = point[0], point[1]
-            if counter > 2:
-                self.worker.execute_clean()
-                counter = 0
-                time.sleep(20)
-
-            time.sleep(2)
-            self.worker.execute_goto_grid_2(row-1, col-1)
-            time.sleep(2)
-            self.worker.execute_custom_solder_2(extrude_time=0.35, hold_time=3)
-            time.sleep(2)
-            self.request_jog.emit("Z", 1)
-            self.request_jog.emit("X", 1)
-            self.request_jog.emit("Z", 10)
-            time.sleep(2)
-            counter += 1
+        self.request_start_soldering_sequence.emit(board_data_path)
 
     def wait_for_user(self, msg):
             # for testing purposes only
@@ -756,7 +869,7 @@ class CameraWorker(QThread):
         self.is_paused = False
 
     def run(self):
-        cap = cv2.VideoCapture(-1, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
 
@@ -780,13 +893,13 @@ class CameraWorker(QThread):
             if ret:
                 # 2. Define center based on actual frame size
                 h, w, ch = frame.shape
-                center = ((w // 2) + 258, (h // 2)+23)
+                center = ((w // 2) + 230, (h // 2) - 160)
                 radius = 10
                 color = (0, 0, 255)  # BGR Red
                 thickness = 2
 
                 # 3. DRAW FIRST (on the NumPy array)
-                cv2.circle(frame, center, radius, color, thickness)
+                # cv2.circle(frame, center, radius, color, thickness)
 
                 # 4. CONVERT SECOND (BGR to RGB for Qt)
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)

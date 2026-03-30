@@ -136,9 +136,9 @@ class BoardViewTab(QWidget):
             ),
             "pixel_mm_ratio": self.image_processor.pixel_mm_ratio,
             "first_hole": (
-                self.image_processor.first_hole_pixel.tolist()
+                self.image_processor.first_hole_pixel.tolist() + [-22.4]
                 if hasattr(self.image_processor.first_hole_pixel, "tolist")
-                else self.image_processor.first_hole_pixel
+                else list(self.image_processor.first_hole_pixel) + [0.0]
             ),
             "points": points_index,
             "lines": [{"start": start, "end": end} for start, end in lines_index],
@@ -151,9 +151,10 @@ class BoardViewTab(QWidget):
         print(f"{filename} saved successfully!")
 
     def calculate_hole_number(self, x, y):
-        x_num = int((x - 3) / 22) + 1 # radius = 3, holespacing = 22
-        y_num = int((y - 3) / 22) + 1
-
+        print(f"Calculating hole number for pixel ({x}, {y})")
+        x_num = int((x - 75 - 3) / 22) + 1 # radius = 3, holespacing = 22
+        y_num = int((y - 80 - 3) / 22) + 1
+        print(f"Calculated hole number: ({x_num}, {y_num})")
         return y_num, x_num
 
     def show_camera_popup(self):
@@ -194,6 +195,8 @@ class BoardViewTab(QWidget):
         rgb_frame = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
 
         #### IMAGE PROCESSING
+
+        # cv_frame = cv2.imread(IMG_PATH) # For testing with static image, replace with actual frame from camera
         self.cv_frame = cv_frame
 
         self.image_processor = ImageProcessor(cv_frame)

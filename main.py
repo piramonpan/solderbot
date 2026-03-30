@@ -4,12 +4,13 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QVB
 from PyQt6.QtCore import Qt
 from ui.tabs.control_tab import ControlTab
 from ui.tabs.edit_tab import BoardViewTab
+from ui.tabs.repeatability_tab import RepeatabilityTab
 from ui.ui_animation import UIAnimation
 from core.logger import setup_logger
 from core.grbl_controller import GRBLController
 from PyQt6.QtWidgets import QSizePolicy
 
-PORT = "COM4"  # change to correct port
+PORT = "COM6"  # change to correct port
 
 class SolderBotApp(QMainWindow):
     def __init__(self, test_mode):
@@ -44,6 +45,10 @@ class SolderBotApp(QMainWindow):
         self.control_tab = ControlTab(logger=self.logger, gcode_controller=self.grbl_controller, testing=test_mode)
         self.tabs.addWidget(self.control_tab)
 
+        # Repeatability Tab
+        self.repeatability_tab = RepeatabilityTab(gcode_controller=self.grbl_controller)
+        self.tabs.addWidget(self.repeatability_tab)
+
          # Add to main layout
         self.layout.addWidget(self.sidebar)
         self.layout.addWidget(self.tabs)
@@ -76,18 +81,22 @@ class SolderBotApp(QMainWindow):
         # Menu Buttons (Targets for QStackedWidget)
         self.btn_editor = QPushButton("📁")
         self.btn_control = QPushButton("⚙️")
+        self.btn_repeatability = QPushButton("📐")
         # Align specifically for sidebar buttons
         self.btn_control.setStyleSheet("text-align: left; padding-left: 15px;")
         self.btn_editor.setStyleSheet("text-align: left; padding-left: 15px;")
+        self.btn_repeatability.setStyleSheet("text-align: left; padding-left: 15px;")
         self.btn_editor.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
         self.btn_control.clicked.connect(lambda: self.tabs.setCurrentIndex(1))
-        for btn in [self.btn_editor, self.btn_control]:
+        self.btn_repeatability.clicked.connect(lambda: self.tabs.setCurrentIndex(2))
+        for btn in [self.btn_editor, self.btn_control, self.btn_repeatability]:
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.sidebar_layout.addWidget(self.btn_toggle)
         self.sidebar_layout.addSpacing(20)
         self.sidebar_layout.addWidget(self.btn_editor)
         self.sidebar_layout.addWidget(self.btn_control)
+        self.sidebar_layout.addWidget(self.btn_repeatability)
         self.sidebar_layout.addStretch()
 
     def toggle_menu(self):
@@ -96,11 +105,11 @@ class SolderBotApp(QMainWindow):
 
     # deal with camera pause when switching tabs to prevent freezing and high CPU usage
     def cameras_event(self):
-        if self.tabs.currentIndex() == 0: # Editor Tab
-            self.control_tab.camera_worker.is_paused = True
-        elif self.tabs.currentIndex() == 1: # Control Tab
+        if self.tabs.currentIndex() == 1:  # Control Tab
             print("Resuming camera....")
             self.control_tab.camera_worker.is_paused = False
+        else:
+            self.control_tab.camera_worker.is_paused = True
 
     def closeEvent(self, event):
         event.accept()

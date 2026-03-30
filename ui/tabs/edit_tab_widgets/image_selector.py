@@ -31,7 +31,7 @@ class TakeImageThread(QThread):
         self.capture_requested = False
 
     def run(self):
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
@@ -73,6 +73,15 @@ class TakeImageThread(QThread):
                 cv_img, (800, int(800 * (h / w))), interpolation=cv2.INTER_AREA
             )
             rgb_image = cv2.cvtColor(preview_img, cv2.COLOR_BGR2RGB)
+
+            # Draw grid
+            grid_color = (80, 80, 80)
+            ph, pw = rgb_image.shape[:2]
+            grid_spacing = 25
+            for x in range(0, pw, grid_spacing):
+                cv2.line(rgb_image, (x, 0), (x, ph), grid_color, 1)
+            for y in range(0, ph, grid_spacing):
+                cv2.line(rgb_image, (0, y), (pw, y), grid_color, 1)
             qt_img = QImage(
                 rgb_image.data,
                 preview_img.shape[1],
@@ -108,9 +117,10 @@ class ImageSelector(QGraphicsView):
 
     def load_from_ndarray(self, cv_frame):
         self.cv_image = cv_frame  # Store original (e.g. 1920x1080)
-        display_img = cv2.resize(
-            cv_frame, (800, 450), interpolation=cv2.INTER_AREA
-        )  # Resize for display (800x450)
+        display_img = cv_frame.copy()
+        # display_img = cv2.resize(
+        #     cv_frame, (800, 450), interpolation=cv2.INTER_AREA
+        # )  # Resize for display (800x450)
         h, w, _ = display_img.shape
         q_img = QImage(
             display_img.data, w, h, w * 3, QImage.Format.Format_RGB888
@@ -132,7 +142,8 @@ class ImageSelector(QGraphicsView):
         )  # Get coordinates on the 800x450 display
 
         # Zoomed In Lens Calculation
-        scale_x, scale_y = self.cv_image.shape[1] / 800, self.cv_image.shape[0] / 450
+        # scale_x, scale_y = self.cv_image.shape[1] / 800, self.cv_image.shape[0] / 450
+        scale_x, scale_y = 1, 1 # Because we're now displaying at native resolution
         true_x, true_y = int(pos.x() * scale_x), int(pos.y() * scale_y)
         h_orig, w_orig, _ = self.cv_image.shape
         half = self.lens_size // (2 * self.zoom_factor)
@@ -177,17 +188,23 @@ class ImageSelector(QGraphicsView):
             display_point = self.mapToScene(event.position().toPoint())
 
             # Calculate the TRUE ROBOT point (1920x1080)
-            true_x = display_point.x() * (self.cv_image.shape[1] / 800)
-            true_y = display_point.y() * (self.cv_image.shape[0] / 450)
+            # true_x = display_point.x() * (self.cv_image.shape[1] / 800)
+            # true_y = display_point.y() * (self.cv_image.shape[0] / 450)
+
+            true_x = display_point.x()
+            true_y = display_point.y()
             print(f"Clicked - Screen: ({display_point.x():.0f}, {display_point.y():.0f}) -> Robot: ({true_x:.0f}, {true_y:.0f})")
 
-            true_point = self.find_closest_point((true_x, true_y)) if self.keypoints else true_point
+            true_point = self.find_closest_point((true_x, true_y, 0.0)) if self.keypoints else true_point
 
             print(f"Adjusted to closest keypoint: ({true_point[0]:.0f}, {true_point[1]:.0f})")
             # translate true point back to display coordinates for feedback dot
             true_qpointf = QPointF(true_point[0], true_point[1])
             display_x = true_qpointf.x() * (800 / self.cv_image.shape[1])
             display_y = true_qpointf.y() * (450 / self.cv_image.shape[0])
+
+            display_x = true_qpointf.x()
+            display_y = true_qpointf.y()
 
             display_point = QPointF(display_x, display_y)
 
@@ -214,7 +231,8 @@ class ImageSelector(QGraphicsView):
         min_point: cv2.KeyPoint = None #type: ignore
 
         for idx, point in enumerate(self.keypoints):
-            distance = math.dist(point.pt, first_hole)
+            first_hole_dist = (first_hole[0], first_hole[1])
+            distance = math.dist(point.pt, first_hole_dist)
             if distance < min_dist:
                 min_dist = distance
                 min_point = point
