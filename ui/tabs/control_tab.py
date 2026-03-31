@@ -192,18 +192,17 @@ class GCodeWorker(QObject):
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
 
-    @pyqtSlot(float, float)
-    def execute_custom_solder_2(self, extrude_time, hold_time):
+    @pyqtSlot(float, float, float)
+    def execute_custom_solder_2(self, extrude_time, hold_before, hold_time):
         """Dispense solder using Python-side delays."""
         if not self.controller:
             return
         self.log_requested.emit(
             f"SOLDER ACTION: Extruding Time: {extrude_time}s Solder Time: {hold_time}s"
         )
-
         try:
             commands = [
-                str(2),
+                str(hold_before),
                 self.controller.writer.start_dispensing(
                     speed=200
                 ),  # HARD-CODED SPEED FOR TESTING
@@ -489,7 +488,7 @@ class ControlTab(QWidget):
     # New Signals
     request_set_zero_workspace = pyqtSignal()
     request_grid_move = pyqtSignal(int, int)
-    request_custom_solder = pyqtSignal(float, float)
+    request_custom_solder = pyqtSignal(float, float, float)
     request_return_start = pyqtSignal()
     request_extruding = pyqtSignal(bool)
     request_clean = pyqtSignal()
@@ -665,7 +664,7 @@ class ControlTab(QWidget):
     def issue_custom_solder(self):
         ext = self.jog_widget.spin_extrude.value()
         sec = self.jog_widget.spin_time.value()
-        self.request_custom_solder.emit(ext, sec)
+        self.request_custom_solder.emit(ext, sec, sec)
 
     def issue_set_zero_workspace(self):
         self.request_set_zero_workspace.emit()

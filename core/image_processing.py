@@ -2,6 +2,8 @@ from typing import List
 import cv2
 import numpy as np
 import math
+import sys
+import os
 
 IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_11.jpg"  # Update this to your image path
 
@@ -77,6 +79,8 @@ class ImageProcessor:
     def find_blob_center(self):
         # 1. Load and Pre-process
         gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
 
         # 2. Configure Detector
         params = cv2.SimpleBlobDetector_Params()
@@ -88,7 +92,7 @@ class ImageProcessor:
         # Area: The size of the hole in pixels
         params.filterByArea = True
         params.minArea = 50
-        params.maxArea = 1000
+        params.maxArea = 2000
 
         # Circularity: 0 is a line, 1 is a perfect circle
         params.filterByCircularity = True
@@ -96,9 +100,15 @@ class ImageProcessor:
 
         # Inertia: How "round" vs "oval" the blob is
         params.filterByInertia = True
-        params.minInertiaRatio = 0.4
+        params.minInertiaRatio = 0.5
 
-        params.filterByColor = False  # We will use the default (looking for dark blobs)
+        # Colour: colour of the blob
+        params.filterByColor = True  # We will use the default (looking for dark blobs)
+        params.blobColor = 0  # Look for dark blobs
+
+        # Convexity
+        params.filterByConvexity = True
+        params.minConvexity = 0.5
 
         # 3. Detect
         detector = cv2.SimpleBlobDetector_create(params)
@@ -113,6 +123,11 @@ class ImageProcessor:
             (0, 255, 0),
             cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS,
         )
+        
+        # show image for debugging
+        #cv2.imshow("Detected Holes", self.image_copy)
+        #cv2.waitKey(0)
+        #cv2.destroyAllWindows()
 
         if self.verbose:
             print(f"Number of holes detected: {len(self.keypoints)}")

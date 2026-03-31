@@ -84,8 +84,10 @@ class BoardViewTab(QWidget):
             self.image_processor.valid_x,
         )
 
+    # helper function for image overlay test
     def image_on_board(self):
         self.scene.load_background()
+        self.scene.draw_board()
 
     def on_image_button(self, clicked):
         self.scene.load_background()
@@ -152,6 +154,10 @@ class BoardViewTab(QWidget):
 
     def calculate_hole_number(self, x, y):
         print(f"Calculating hole number for pixel ({x}, {y})")
+        # Use the actual pitch from image processing instead of hardcoded 23
+        pitch = self.image_processor.pixel_mm_ratio * 3.81  # 3.81mm is the standard hole spacing on a protoboard
+        
+        # Calculate grid coordinates (0-based, no radius subtraction needed since points are at centers)
         x_num = int((x - 75 - 3) / 22) + 1 # radius = 3, holespacing = 22
         y_num = int((y - 80 - 3) / 22) + 1
         print(f"Calculated hole number: ({x_num}, {y_num})")
@@ -226,7 +232,7 @@ class BoardViewTab(QWidget):
 
             self.image_processor.find_valleys(self.image_processor.keypoints)  # Re-run valley finding with updated first hole pixel
             self.image_on_board()
-            self.draw_board()  # Redraw board with updated hole positions
+            #self.draw_board()  # Redraw board with updated hole positions
 
 class DisplayImageGroup(QGroupBox):
     """Styled group box for displaying the board image."""
