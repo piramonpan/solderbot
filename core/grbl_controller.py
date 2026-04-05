@@ -2,11 +2,21 @@
 GRBL"""
 
 # imports
+import functools
+import warnings
 import serial
 import time
 import json
 from serial.tools import list_ports
 from core.gcodewriter import GCodeWriter as writer
+
+
+def deprecated(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        warnings.warn(f"{func.__name__} is deprecated and will be removed in a future version.", DeprecationWarning, stacklevel=2)
+        return func(*args, **kwargs)
+    return wrapper
 
 # constants
 BAUDRATE = 115200
@@ -59,10 +69,21 @@ class GRBLController:
 
     def connect(self, port: str):
         try:
-            self.ser = serial.Serial(port=port, baudrate=BAUDRATE)
-            print(f"Successfully connected to port {port}")
-            return True
-        
+            self.ser = serial.Serial(port=port, baudrate=BAUDRATE, timeout=2.0)
+            # GRBL sends a startup banner ("Grbl x.x ['$' for help]") within ~2s.
+            # Read lines until we see it or time out.
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                line = self.ser.readline().decode(errors="ignore").strip()
+                if line.lower().startswith("grbl"):
+                    print(f"GRBL detected on {port}: {line}")
+                    return True
+            # No GRBL banner received — close and reject
+            self.ser.close()
+            self.ser = None
+            print(f"No GRBL response on {port} — not a GRBL device")
+            return False
+
         except serial.SerialException:
             print(f"Failed to connect to port {port}")
             self.list_available_ports()
@@ -83,6 +104,7 @@ class GRBLController:
                     return
             time.sleep(0.2)
 
+    @deprecated
     def gcode_test(self):
         """Test basic movement of gantry
         parameters:
@@ -251,6 +273,7 @@ class GRBLController:
 
         return commands
 
+    @deprecated
     def send_commands_old(self, commands: list) -> None:
         """Sends GCODE command to gantry microcontroller by writing to serial
         port.
@@ -376,16 +399,17 @@ class GRBLController:
         # move to cleaning station
         commands.append(self.writer.positioning("absolute"))
         commands.append(self.writer.move_up_down(self.height))
-        commands.append(self.writer.rapid_positioning(155, -55.0))
-        commands.append(self.writer.move_up_down(-self.height))
+        commands.append(self.writer.rapid_positioning(150, -55.0))
+        commands.append(self.writer.positioning("relative"))
+        commands.append(self.writer.move_up_down(-8))
 
         # move back and forth to clean
-        commands.append(self.writer.positioning("relative"))
         for _ in range(3):
             commands.append(self.writer.rapid_positioning(None, -15.0))
             commands.append(self.writer.rapid_positioning(None, 15.0))
         
-        # go back to soldering position
+        # move end effector up after cleaning
+        commands.append(self.writer.positioning("absolute"))
         commands.append(self.writer.move_up_down(self.height))
 
         return commands

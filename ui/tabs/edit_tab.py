@@ -17,9 +17,9 @@ import json
 from core.image_processing import ImageProcessor
 import cv2
 from PyQt6.QtCore import Qt
+import math
 
-IMG_PATH = r"C:\Users\piram\Desktop\opencv_test\images\TEST_10.jpg"
-
+IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_11.jpg"
 
 class BoardViewTab(QWidget):
     def __init__(self):
@@ -30,7 +30,7 @@ class BoardViewTab(QWidget):
     def init_ui(self):
         self.popup = ImagePopUp()
 
-        self.popup.camera_thread.image_captured_signal.connect(
+        self.popup.image_captured_signal.connect(
             self.transition_to_selector
         )
         self.popup.page_cal.btn_next.clicked.connect(self.go_to_selector)
@@ -84,6 +84,11 @@ class BoardViewTab(QWidget):
             self.image_processor.valid_x,
         )
 
+    # helper function for image overlay test
+    def image_on_board(self, first_hole_pixel):
+        self.scene.load_background(first_hole=first_hole_pixel)
+        self.scene.draw_board()
+
     def on_image_button(self, clicked):
         self.scene.load_background()
 
@@ -133,9 +138,9 @@ class BoardViewTab(QWidget):
             ),
             "pixel_mm_ratio": self.image_processor.pixel_mm_ratio,
             "first_hole": (
-                self.image_processor.first_hole_pixel.tolist()
+                self.image_processor.first_hole_pixel.tolist() + [-22.4]
                 if hasattr(self.image_processor.first_hole_pixel, "tolist")
-                else self.image_processor.first_hole_pixel
+                else list(self.image_processor.first_hole_pixel) + [0.0]
             ),
             "points": points_index,
             "lines": [{"start": start, "end": end} for start, end in lines_index],
@@ -148,9 +153,14 @@ class BoardViewTab(QWidget):
         print(f"{filename} saved successfully!")
 
     def calculate_hole_number(self, x, y):
-        x_num = int((x - 3) / 20) + 1
-        y_num = int((y - 3) / 20) + 1
-
+        print(f"Calculating hole number for pixel ({x}, {y})")
+        # Use the actual pitch from image processing instead of hardcoded 23
+        pitch = self.image_processor.pixel_mm_ratio * 3.81  # 3.81mm is the standard hole spacing on a protoboard
+        
+        # Calculate grid coordinates (0-based, no radius subtraction needed since points are at centers)
+        x_num = int((x - self.image_processor.first_hole_pixel[0]) / 22) + 1 # radius = 3, holespacing = 22
+        y_num = int((y - self.image_processor.first_hole_pixel[1]) / 22) + 1
+        print(f"Calculated hole number: ({x_num}, {y_num})")
         return y_num, x_num
 
     def show_camera_popup(self):
@@ -191,14 +201,12 @@ class BoardViewTab(QWidget):
         rgb_frame = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
 
         #### IMAGE PROCESSING
-        ##### TODO: HARDCODED FOR TESTING ####
-        self.cv_frame = cv2.imread(
-            IMG_PATH
-        )  # Convert path to cv_frame for now, but we want to skip this step eventually
 
-        self.image_processor = ImageProcessor(self.cv_frame)
-        # Run your orange marker detection here
-        self.image_processor.find_pixel_locations()
+        # cv_frame = cv2.imread(IMG_PATH) # For testing with static image, replace with actual frame from camera
+        self.cv_frame = cv_frame
+
+        self.image_processor = ImageProcessor(cv_frame)
+        result = self.image_processor.find_pixel_locations()
         self.image_processor.find_blob_center()
 
         #### REUTRN RGB FRAME WITH MARKERS DRAWN ON IT
@@ -208,18 +216,23 @@ class BoardViewTab(QWidget):
 
     def go_to_selector(self):
         # Step 2: Pass frame to Selector Page
+        self.popup.page_sel.view.keypoints = self.image_processor.keypoints
+
         if self.cv_frame is not None:
+            self.cv_frame = self.image_processor.image_copy # Replace with actual frame from camera for testing
             rgb_frame = cv2.cvtColor(self.cv_frame, cv2.COLOR_BGR2RGB)
             self.popup.page_sel.view.load_from_ndarray(rgb_frame)
             self.popup.stack.setCurrentIndex(2)
 
     def save_first_hole_pixel(self):
         if self.image_processor:
-            self.image_processor.first_hole_pixel = self.popup.page_sel.first_hole_pixel()
+            self.image_processor.first_hole_pixel = (self.popup.page_sel.first_hole_pixel())
+            # find nearest point 
             print(f"First hole pixel set to: {self.image_processor.first_hole_pixel}")
 
             self.image_processor.find_valleys(self.image_processor.keypoints)  # Re-run valley finding with updated first hole pixel
-            self.draw_board()  # Redraw board with updated hole positions
+            self.image_on_board(self.image_processor.first_hole_pixel)
+            #self.draw_board()  # Redraw board with updated hole positions
 
 class DisplayImageGroup(QGroupBox):
     """Styled group box for displaying the board image."""

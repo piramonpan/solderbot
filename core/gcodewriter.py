@@ -1,6 +1,16 @@
 """ This Python Class is used to translate user commands into gcode commands """
 
+import functools
+import warnings
 from typing import Union
+
+
+def deprecated(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        warnings.warn(f"{func.__name__} is deprecated and will be removed in a future version.", DeprecationWarning, stacklevel=2)
+        return func(*args, **kwargs)
+    return wrapper
 
 class GCodeWriter:
     # +z = up
@@ -10,7 +20,7 @@ class GCodeWriter:
     # +y = away? (facing front)
     # -y = towards
 
-    def rapid_positioning(self, x: Union[float, None], y: Union[float, None]):
+    def rapid_positioning(self, x: Union[float, None], y: Union[float, None], z: Union[float, None]=None):
         """ Moves the end effector in a straight line in the xy-plane. This will
         move the gantry at maximum speed (as defined by the hardware) """
 
@@ -19,6 +29,8 @@ class GCodeWriter:
             command += f' X{x}'
         if y is not None:
             command += f' Y{y}'
+        if z is not None:
+            command += f' Z{z}'
 
         return command
     
@@ -51,6 +63,7 @@ class GCodeWriter:
 
         return command
 
+    @deprecated
     def set_reference(self):
         """ Sets the current position as the reference point """
 
@@ -108,6 +121,7 @@ class GCodeWriter:
     def velocity_to_feedrate(self, velocity):
         return f"F{velocity:.1f}"
     
+    @deprecated
     def home_axis_old(self, axis, all=False):
         """ Homes the specified axis ('x', 'y', or 'z') """
 
@@ -135,6 +149,18 @@ class GCodeWriter:
     def probe_z(self):
         """ Probes the z-axis to find the height of the workpiece surface """
 
-        command = 'G38.2Z-30F100'  # Probe downwards to a maximum depth of 10mm at a feedrate of 100 mm/min
+        command = 'G38.2Z-30F150'  # Probe downwards to a maximum depth of 10mm at a feedrate of 100 mm/min
 
         return command
+    
+    @deprecated
+    def probe_z_pan(self):
+        commands = []
+        
+        commands.append('G38.2 Z-30 F150')  # Stage 1: Fast seek. Stops immediately when it hits the board.
+        commands.append('G0 Z2')            # Stage 2: Retract slightly (2mm) to clear the trigger.
+        commands.append('G38.2 Z-5 F50')    # Stage 3: Slow "Fine" probe. Much more accurate.
+        commands.append('G92 Z0')           # Stage 4: Set this perfect touch-point as Zero.
+        commands.append('G0 Z5')            # Stage 5: Move to safe travel height.
+
+        return commands
