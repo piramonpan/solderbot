@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QPen, QColor, QBrush, QPixmap, QImage
 from PyQt6.QtCore import Qt, QRect
 from core.image_processing import ImageProcessor
+from typing import Union
 
 PIXEL_TO_MM = 27.5  ## 2.54 mm hole spacing
 SPACING = 18
@@ -35,6 +36,7 @@ class ProtoBoardScene(QGraphicsScene):
 
     def load_background(
         self,
+        first_hole,
         image_path="data/captured_image.jpg",
         opacity=0.75,
     ):
@@ -56,9 +58,9 @@ class ProtoBoardScene(QGraphicsScene):
         self.addItem(self.image_item)
 
         # find holes in image
-        self.find_background_holes(pixmap)
+        self.find_background_holes(pixmap, first_hole)
     
-    def find_background_holes(self, pixmap: QPixmap):
+    def find_background_holes(self, pixmap: QPixmap, first_hole: tuple):
         # convert QPixmap to QImage
         qimage = pixmap.toImage()
 
@@ -75,13 +77,28 @@ class ProtoBoardScene(QGraphicsScene):
 
         # detect holes
         self.image_processor = ImageProcessor(cv_img)
-        self.image_processor.find_blob_center()
-        filtered_points = self.image_processor.filter_keypoints(self.image_processor.keypoints)
+        keypoints = self.image_processor.find_blob_center()
 
+        # set first hole pixel in overlay image
+        overlay_first_hole = (
+            first_hole[0] - 500, 
+            first_hole[1]
+        )  # adjust for cropping offset
+
+        # filter holes
+        ref_x, ref_y = overlay_first_hole[0], overlay_first_hole[1]
+        margin = 5
+        filtered_points = [
+            kp
+            for kp in keypoints
+            if kp.pt[0] >= ref_x - margin and kp.pt[1] >= ref_y - margin
+        ]
+        
         # extract (x, y) coordinates
         self.detected_holes = [
             (int(kp.pt[0]), int(kp.pt[1])) for kp in filtered_points
         ]
+        print(sorted(self.detected_holes))
 
     def draw_board(self):
         self.draw_holes(self.detected_holes)
@@ -111,8 +128,8 @@ class ProtoBoardScene(QGraphicsScene):
 
     def estimate_undetected(self):
         grid = []
-        x_threshold = [1, 2, 3, 4, 5, 6]
-        y_threshold = [1, 2, 3, 4, 5, 6, 7]
+        x_threshold = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        y_threshold = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
         grid_xs = sorted(set(x for x, y in self.detected_holes))
         grid_ys = sorted(set(y for x, y in self.detected_holes))
@@ -154,16 +171,6 @@ class ProtoBoardScene(QGraphicsScene):
                     undetected.append((x, y))
         return undetected
     
-    def find_closest_detected(self, x_point: float, y_point: float) -> list:
-        """ Finds and returns the nearest hole to the one the user selects
-        """      
-        # Find nearest hole
-        nearest_hole = min(
-            self.detected_holes,
-            key=lambda p: (p[0] - x_point)**2 + (p[1] - y_point)**2
-        )
-        
-        return nearest_hole
 
 class ProtoBoardSceneWithLines(ProtoBoardScene):
     def __init__(self, parent=None):
@@ -187,12 +194,12 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             pos = event.scenePos()  # position in scene coordinates
 
             #hole_x, hole_y = self.find_closest_hole(pos.x(), pos.y())
-            nearest_hole = self.find_closest_hole(pos.x(), pos.y())
+            nearest_hole = self.find_closest_hole(None, False, pos.x(), pos.y())
             hole_x = nearest_hole[0]
             hole_y = nearest_hole[1]
             
             # check if hole is already selected
-            if (hole_x, hole_y) not in self.points:
+            if (hole_x + 500, hole_y) not in self.points:
                 # Draw a small circle at the click
                 self.circle = QGraphicsEllipseItem(
                     hole_x - self.point_radius,
@@ -208,24 +215,25 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
                 self.circles.append(self.circle)
 
                 # Store the point coordinates
-                self.points.append((hole_x, hole_y))
-                print(f"Point stored: ({hole_x:.1f}, {hole_y:.1f})")
+                saved_coord = (hole_x + 500, hole_y) # cropped image offset = 500
+                self.points.append(saved_coord) 
+                print(f"Point stored: ({saved_coord[0]:.1f}, {saved_coord[1]:.1f})")
             else:
                 # erase circle if clicked again
-                index = self.points.index((hole_x, hole_y))
+                index = self.points.index((hole_x + 500, hole_y))
                 circle_to_remove = self.circles[index]
                 self.removeItem(circle_to_remove)
                 self.circles.remove(circle_to_remove)
                 print("circle removed")
 
                 # remove point coordinates
-                self.points.remove((hole_x, hole_y))
+                self.points.remove((hole_x + 500, hole_y)) # cropped image offset = 500
                 print("coord removed")
 
         # TODO: add line removal
         if event.button() == Qt.MouseButton.LeftButton and self.add_line_mode:
             pos = event.scenePos()
-            self.start_x, self.start_y = self.find_closest_hole(pos.x(), pos.y()) 
+            self.start_x, self.start_y = self.find_closest_hole(None, False, pos.x(), pos.y()) 
 
             self.current_line = QGraphicsLineItem(
                 self.start_x, self.start_y,
@@ -239,7 +247,7 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
     def mouseMoveEvent(self, event):
         if self.current_line:
             pos = event.scenePos()
-            end_x, end_y = self.find_closest_hole(pos.x(), pos.y()) 
+            end_x, end_y = self.find_closest_hole(None, False, pos.x(), pos.y()) 
             self.current_line.setLine(
                 self.start_x, self.start_y,
                 end_x, end_y
@@ -250,7 +258,7 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
         if self.current_line:
             # finalize line
             pos = event.scenePos()
-            end_x, end_y = self.find_closest_hole(pos.x(), pos.y()) 
+            end_x, end_y = self.find_closest_hole(None, False, pos.x(), pos.y()) 
 
             self.current_line.setLine(
                 self.start_x,self.start_y,
@@ -262,12 +270,17 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             self.current_line = None
         super().mouseReleaseEvent(event)
 
-    def find_closest_hole(self, x_point: float, y_point: float) -> list:
+    def find_closest_hole(self, holes: Union[list, None], selector: bool, x_point: float, 
+                          y_point: float) -> list:
         """ Finds and returns the nearest hole to the one the user selects
         """      
+        # check context for finding closest hole
+        if not selector:
+            holes = self.holes
+
         # Find nearest hole
         nearest_hole = min(
-            self.holes,
+            holes,
             key=lambda p: (p[0] - x_point)**2 + (p[1] - y_point)**2
         )
         

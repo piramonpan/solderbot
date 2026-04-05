@@ -18,6 +18,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPointF
 from PyQt6.QtGui import QPixmap, QPen, QColor, QImage, QFont
+#from core.image_processing import ImageProcessor
+from ui.tabs.edit_tab_widgets.protoboard import ProtoBoardSceneWithLines
 import math
 
 class TakeImageThread(QThread):
@@ -115,6 +117,8 @@ class ImageSelector(QGraphicsView):
         self.setMouseTracking(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
 
+        self.proto_scene = ProtoBoardSceneWithLines()
+
     def load_from_ndarray(self, cv_frame):
         self.cv_image = cv_frame  # Store original (e.g. 1920x1080)
         display_img = cv_frame.copy()
@@ -188,37 +192,32 @@ class ImageSelector(QGraphicsView):
             display_point = self.mapToScene(event.position().toPoint())
 
             # Calculate the TRUE ROBOT point (1920x1080)
-            # true_x = display_point.x() * (self.cv_image.shape[1] / 800)
-            # true_y = display_point.y() * (self.cv_image.shape[0] / 450)
-
-            true_x = display_point.x()
-            true_y = display_point.y()
-            print(f"Clicked - Screen: ({display_point.x():.0f}, {display_point.y():.0f}) -> Robot: ({true_x:.0f}, {true_y:.0f})")
-
-            true_point = self.find_closest_point((true_x, true_y, 0.0)) if self.keypoints else true_point
-
-            print(f"Adjusted to closest keypoint: ({true_point[0]:.0f}, {true_point[1]:.0f})")
-            # translate true point back to display coordinates for feedback dot
-            true_qpointf = QPointF(true_point[0], true_point[1])
-            display_x = true_qpointf.x() * (800 / self.cv_image.shape[1])
-            display_y = true_qpointf.y() * (450 / self.cv_image.shape[0])
-
-            display_x = true_qpointf.x()
-            display_y = true_qpointf.y()
-
-            display_point = QPointF(display_x, display_y)
+            true_x = display_point.x() * (self.cv_image.shape[1] / 800)
+            true_y = display_point.y() * (self.cv_image.shape[0] / 450)
+            true_point = QPointF(true_x, true_y)
 
             # Draw the dot on the 800x450 screen (for user feedback)
+            detected_holes = [
+                (int(kp.pt[0]), int(kp.pt[1])) for kp in self.keypoints
+            ]
+            closest_point = self.proto_scene.find_closest_hole(detected_holes, True, display_point.x(), display_point.y())
+            print(f"Closest hole to click: {closest_point}")
             self.current_dot = QGraphicsEllipseItem(
-                display_point.x() - 2, display_point.y() - 2, 8, 8
+                closest_point[0] - 3, closest_point[1] - 3, 8, 8
             )
             self.current_dot.setPen(QPen(Qt.GlobalColor.green, 2))
             self.current_dot.setBrush(QColor(0, 255, 0, 150))
             self.scene().addItem(self.current_dot)
 
-            self.point_selected_signal.emit(true_qpointf)
+            # print(f"Selection - Screen: ({display_point.x():.0f}, {display_point.y():.0f}) -> Robot: ({true_x:.0f}, {true_y:.0f})")
 
-            self.first_hole_pixel = true_point
+            self.first_hole_pixel = (
+                closest_point[0],
+                closest_point[1],
+            )  # Store the first hole pixel for later use
+
+            true_point = QPointF(closest_point[0], closest_point[1])
+            self.point_selected_signal.emit(true_point)
             print(f"First hole pixel set to: {self.first_hole_pixel}")
         super().mousePressEvent(event)
 

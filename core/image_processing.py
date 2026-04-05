@@ -133,6 +133,8 @@ class ImageProcessor:
             print(f"Number of holes detected: {len(self.keypoints)}")
             cv2.imshow("Holes Detected", self.image_copy)
             cv2.waitKey(0)
+        
+        return self.keypoints
 
     def filter_keypoints(self, points):
         """
@@ -146,6 +148,8 @@ class ImageProcessor:
         # --- 1. Size outlier removal ---
         sizes = np.array([kp.size for kp in points])
         median_size = np.median(sizes)
+        
+        # filter out holes that are too large
         size_mask = sizes <= median_size * 1.30
         filtered = [kp for kp, keep in zip(points, size_mask) if keep]
 
@@ -159,15 +163,21 @@ class ImageProcessor:
         if self.first_hole_pixel is not None:
             ref_x, ref_y = self.first_hole_pixel[0], self.first_hole_pixel[1]
             before = len(filtered)
+            margin = 5
             filtered = [
                 kp
                 for kp in filtered
-                if kp.pt[0] >= ref_x * (0.9) and kp.pt[1] >= ref_y * (0.9)
+                if kp.pt[0] >= ref_x - margin and kp.pt[1] >= ref_y - margin
             ]  # Keep holes that are to the right and below the first hole (with a 10% margin)
             if self.verbose:
                 print(
                     f"Origin filter: removed {before - len(filtered)} keypoints left of/above first hole ({ref_x}, {ref_y})"
                 )
+
+            filtered_holes = [
+                (int(kp.pt[0]), int(kp.pt[1])) for kp in filtered
+            ]
+            print(sorted(filtered_holes))
 
         return filtered
 
