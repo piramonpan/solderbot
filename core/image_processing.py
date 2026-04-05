@@ -340,6 +340,11 @@ class ImageProcessor:
 
         corners, ids, _ = detector.detectMarkers(gray)
 
+        # Refine corners to sub-pixel accuracy
+        if corners:
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.001)
+            corners = [cv2.cornerSubPix(gray, c, (3, 3), (-1, -1), criteria) for c in corners]
+
         # Show image with detected markers for debugging
         if self.verbose:
             self.image_copy = cv2.aruco.drawDetectedMarkers(self.image_copy, corners, ids)
@@ -359,15 +364,15 @@ class ImageProcessor:
             marker_id = int(ids[i][0])
             markers.append((cx, marker_id, pts))
             self.aruco_ids.append(marker_id)
-            self.aruco_centers.append((int(cx), int(np.mean(pts[:, 1]))))
+            self.aruco_centers.append((round(float(cx), 2), round(float(np.mean(pts[:, 1])), 2)))
 
         # Sort by center x: index 0 = left marker, index 1 = right marker
         markers.sort(key=lambda m: m[0])
         left_pts  = markers[0][2]
         right_pts = markers[1][2]
 
-        top_left_of_left   = (int(left_pts[0][0]),  int(left_pts[0][1]))   # TL corner
-        top_right_of_right = (int(right_pts[1][0]), int(right_pts[1][1]))  # TR corner
+        top_left_of_left   = (round(float(left_pts[0][0]), 2),  round(float(left_pts[0][1]), 2))   # TL corner
+        top_right_of_right = (round(float(right_pts[1][0]), 2), round(float(right_pts[1][1]), 2))  # TR corner
 
         # Draw visualization
         for cx, marker_id, pts in markers:
@@ -382,8 +387,8 @@ class ImageProcessor:
                 2,
             )
 
-        cv2.circle(self.image_copy, top_left_of_left,   5, (0, 0, 255), -1)
-        cv2.circle(self.image_copy, top_right_of_right, 5, (0, 0, 255), -1)
+        cv2.circle(self.image_copy, (int(top_left_of_left[0]),   int(top_left_of_left[1])),   5, (0, 0, 255), -1)
+        cv2.circle(self.image_copy, (int(top_right_of_right[0]), int(top_right_of_right[1])), 5, (0, 0, 255), -1)
 
         if self.verbose:
             print(f"Left marker  (ID={markers[0][1]}) top-left corner:  {top_left_of_left}")

@@ -87,11 +87,30 @@ class GCodeWorker(QObject):
             self.log_requested.emit(f"G-Code Error: {str(e)}")
 
     @pyqtSlot()
+    def execute_probe_z(self):
+        if not self.controller:
+            return
+        self.log_requested.emit("Probing Z height...")
+        try:
+            commands = [
+                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.rapid_positioning(x=136, y=36),
+            ]
+            self.controller.send_commands(commands=commands)
+            self.controller.send_commands(commands=[self.controller.writer.probe_z()])
+        except Exception as e:
+            self.log_requested.emit(f"Probe Z error: {str(e)}")
+
+    @pyqtSlot()
     def execute_find_workspace(self):
         """Move to an estimated workspace location and set it as the new zero reference."""
         x_val = -78
         y_val = 69.8
         z_val = -10
+
+        x_val = 59 + 3.5
+        y_val = 112.5 - 4.6
+        z_val = -20 - 8
 
         print(f"Using Z value from board_data.json: {z_val}")  # Debugging output
 
@@ -158,9 +177,8 @@ class GCodeWorker(QObject):
                 self.controller.writer.rapid_positioning(x=x_coord, y=y_coord),
                 self.controller.writer.positioning(reference="relative"),
                 self.controller.writer.rapid_positioning(x=1, y=None),
-                self.controller.writer.move_up_down(z=-9),
-                self.controller.writer.rapid_positioning(x=-1, y=None),
-                self.controller.writer.move_up_down(z=-1)
+                self.controller.writer.move_up_down(z=-8),
+                self.controller.writer.rapid_positioning(x=-1, y=None, z=-2),
             ]
             self.controller.send_commands(commands=commands)
 
@@ -207,9 +225,7 @@ class GCodeWorker(QObject):
                 ),  # HARD-CODED SPEED FOR TESTING
                 str(extrude_time),
                 self.controller.writer.stop_dispensing(),
-                str(hold_time),
-                #self.controller.writer.positioning(reference="relative"),
-                #self.controller.writer.move_up_down(z=10)
+                str(hold_time)
             ]
             self.controller.send_commands(commands=commands)
         except Exception as e:
@@ -217,6 +233,7 @@ class GCodeWorker(QObject):
 
     @pyqtSlot()
     def execute_return_to_start(self):
+        print("DEBUG STARTTTTT")
         """Skeleton: Return to WORKSPACE origin"""
         self.log_requested.emit("RETURNING: Moving back to first spot...")
         if not self.controller:
@@ -225,6 +242,7 @@ class GCodeWorker(QObject):
             commands = [
                 self.controller.writer.positioning(reference="relative"),
                 self.controller.writer.move_up_down(z=10),  # Move up for clearance
+                self.controller.writer.set_workspace(),
                 self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.rapid_positioning(x=0, y=0),
                 self.controller.writer.move_up_down(
@@ -257,7 +275,7 @@ class GCodeWorker(QObject):
         counter = 0
         for point in board_data.get("points", []):
             row, col = point[0], point[1]
-            if counter > 2:
+            if counter > 5:  # Clean tip every 5 holes
                 self.execute_clean()
                 counter = 0
                 time.sleep(20)
@@ -270,13 +288,17 @@ class GCodeWorker(QObject):
 
             jog_cmds = [
                 self.controller.writer.positioning(reference="relative"),
-                self.controller.writer.move_up_down(z=1),
-                self.controller.writer.rapid_positioning(x=1, y=None),
-                self.controller.writer.move_up_down(z=9),
+                self.controller.writer.rapid_positioning(x=1, y=None, z=2),
+                # self.controller.writer.move_up_down(z=1),
+                # self.controller.writer.rapid_positioning(x=1, y=None),
+                self.controller.writer.move_up_down(z=8),
             ]
             self.controller.send_commands(commands=jog_cmds)
             time.sleep(2)
             counter += 1
+
+        # Go back to start after finishing
+        self.execute_return_to_start()
 
         self.log_requested.emit("Soldering sequence complete.")
 
@@ -292,9 +314,10 @@ class GCodeWorker(QObject):
 
     @pyqtSlot()
     def execute_set_zero_workspace(self):
+        print("DEBUG ZEROOOO")
+        self.log_requested.emit("Setting current position as workspace zero...")
         if not self.controller:
             return
-        self.log_requested.emit("Setting current position as workspace zero...")
         try:
             command = self.controller.writer.set_zero_workspace()
             self.controller.send_commands(commands=[command])
@@ -329,6 +352,27 @@ class GCodeWorker(QObject):
             self.controller.send_commands(commands=command)
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
+
+    @pyqtSlot()
+    def execute_take_image(self):
+        """Move gantry to a safe overhead position for capturing an image."""
+        if not self.controller:
+            return
+        self.log_requested.emit("Moving to image capture position...")
+        try:
+            commands = [
+                self.controller.writer.positioning(reference="absolute"),
+                self.controller.writer.set_workspace(),
+                self.controller.writer.rapid_positioning(x=0, y=0, z=0),
+                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.move_up_down(z=10),
+                self.controller.writer.positioning(reference="absolute"),
+                self.controller.writer.set_workspace(),
+                self.controller.writer.rapid_positioning(x=-10, y=14),
+            ]
+            self.controller.send_commands(commands=commands)
+        except Exception as e:
+            self.log_requested.emit(f"Take image error: {str(e)}")
 
     @pyqtSlot()
     def execute_full_setup(self):
@@ -403,16 +447,102 @@ class GCodeWorker(QObject):
         self.log_requested.emit("Full setup (3/3): Finding workspace...")
         self.execute_find_workspace()
 
+    @pyqtSlot(str)
+    def execute_start_line_soldering(self, board_data_path):
+        try:
+            with open(board_data_path, 'r') as f:
+                board_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.log_requested.emit(f"Board data error: {e}")
+            return
+
+        self.log_requested.emit("Starting line soldering sequence...")
+        time.sleep(1)
+
+        # Jog Z up before starting
+        commands = [
+            self.controller.writer.positioning(reference="relative"),
+            self.controller.writer.move_up_down(z=10),
+        ]
+        self.controller.send_commands(commands=commands)
+
+        counter = 0
+
+        print("DEBUG: Starting line soldering with points:", board_data.get("lines", []))  # Debugging output
+    
+        for line in board_data.get("lines", []):
+            row_s, col_s = line["start"][0], line["start"][1]
+            row_e, col_e = line["end"][0], line["end"][1]
+
+            for i in range(4):        
+                # Solder beginning hole
+                time.sleep(2)
+                self.execute_goto_grid_2((row_s - 1 + i), col_s - 1)
+                time.sleep(1)
+                self.execute_custom_solder_2(extrude_time=0.5, hold_time=1)
+                time.sleep(1)
+
+                jog_up = [
+                    self.controller.writer.positioning(reference="relative"),
+                    self.controller.writer.rapid_positioning(x=1, y=None, z=2),
+                    self.controller.writer.move_up_down(z=8),
+                ]
+                self.controller.send_commands(commands=jog_up)
+                time.sleep(1)
+
+                
+                if i == 0:
+                    continue # dont move to end hole on first iteration, just solder the start hole multiple times for better adhesion
+                
+                #DEBUG
+                # Move +y 2.54/2 to midpoint between the two holes
+                x_mid = ((row_s - 1) + (row_e - 1)) / 2.0 * 2.54
+                y_mid = (2.54 / 2.0)  # Half the distance to move in Y to get to midpoint
+                y_mid = 1.6  # Half the distance to move in Y to get to midpoint
+
+                mid_move = [
+                    self.controller.writer.positioning(reference="relative"),
+                    self.controller.writer.rapid_positioning(x=-1, y=y_mid),
+                    self.controller.writer.move_up_down(z=-9.7),
+                ]
+                self.controller.send_commands(commands=mid_move)
+
+                # Hold for 3 sec then extrude 1 sec
+                time.sleep(2)
+                # self.execute_custom_solder_2(extrude_time=1.1, hold_time=0.2)
+
+                shimmy = [
+                    self.controller.writer.start_dispensing(speed=200),
+                    self.controller.writer.positioning(reference="relative"),
+                    self.controller.writer.linear_interpolation(x=None, y=0.5, f=300),
+                    self.controller.writer.linear_interpolation(x=None, y=-1, f=300),
+                    self.controller.writer.linear_interpolation(x=None, y=1, f=300),
+                    self.controller.writer.linear_interpolation(x=None, y=-1, f=300),
+                    self.controller.writer.move_up_down(z=-0.3),
+                    self.controller.writer.stop_dispensing()
+                ]
+
+                self.controller.send_commands(commands=shimmy)
+                # Wait 0.2 sec then immediately lift up
+                time.sleep(0.2)
+                self.controller.send_commands(commands=jog_up)
+                time.sleep(2)
+
+                counter += 1
+
+        self.execute_return_to_start()
+
+        self.log_requested.emit("Soldering sequence complete.")
 
 class JogControlPanel(QWidget):
-    def __init__(self, parent_logger=None):
+    def __init__(self, parent_logger=None, compact=False):
         super().__init__()
         self.logger = parent_logger
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        self.init_ui()
+        self.init_ui(compact=compact)
 
-    def init_ui(self):
+    def init_ui(self, compact=False):
         # 1. Jog Grid
         jog_group = QGroupBox("Manual Movement")
         grid = QGridLayout()
@@ -431,12 +561,29 @@ class JogControlPanel(QWidget):
         grid.addWidget(self.btn_z_neg, 2, 3)
 
         step_layout = QHBoxLayout()
-        step_layout.addWidget(QLabel("Step (mm):"))
-        self.step_dropdown = QComboBox()
-        self.step_dropdown.addItems(["0.1", "0.5", "1", "2.54", "5", "10"])
-        self.step_dropdown.setCurrentIndex(2)
-        step_layout.addWidget(self.step_dropdown, stretch=1)
+        step_layout.addWidget(QLabel("Step:"))
+        self._step_btns = []
+        for val in ("0.1", "0.5", "1", "2.54", "5", "10"):
+            btn = QPushButton(val)
+            btn.setCheckable(True)
+            btn.setFixedWidth(52)
+            btn.setObjectName("btn_step_size")
+            btn.clicked.connect(lambda _, v=val: self._select_step(v))
+            step_layout.addWidget(btn)
+            self._step_btns.append((val, btn))
+        step_layout.addStretch()
+        self._current_step = "1"
+        self._step_btns[2][1].setChecked(True)  # default: 1 mm
         grid.addLayout(step_layout, 3, 0, 1, 4)
+
+        self.btn_set_zero = QPushButton("Set Zero")
+        self.btn_set_zero.setObjectName("btn_action_accent")
+        grid.addWidget(self.btn_set_zero, 0, 4)
+
+        self.btn_return_start = QPushButton("Return")
+        self.btn_return_start.setObjectName("btn_back_nav")
+        grid.addWidget(self.btn_return_start, 2, 4)
+
         jog_group.setLayout(grid)
 
         # 2. Grid Selection (NEW)
@@ -471,12 +618,18 @@ class JogControlPanel(QWidget):
         self.solder_group.setLayout(solder_layout)
 
         self.layout.addWidget(jog_group)
-        self.layout.addWidget(grid_nav_group)
-        self.layout.addWidget(self.solder_group)
+        if not compact:
+            self.layout.addWidget(grid_nav_group)
+            self.layout.addWidget(self.solder_group)
+
+    def _select_step(self, value: str):
+        for val, btn in self._step_btns:
+            btn.setChecked(val == value)
+        self._current_step = value
 
     @property
     def step_size(self):
-        return self.step_dropdown.currentText()
+        return self._current_step
 
 
 class ControlTab(QWidget):
@@ -655,6 +808,7 @@ class ControlTab(QWidget):
         # New Feature Buttons
         self.jog_widget.btn_grid_go.clicked.connect(self.issue_grid_move)
         self.jog_widget.btn_solder.clicked.connect(self.issue_custom_solder)
+        self.jog_widget.btn_set_zero.clicked.connect(self.issue_set_zero_workspace)
         self.btn_set_zero.clicked.connect(self.issue_set_zero_workspace)
         self.btn_return_start.clicked.connect(lambda: self.request_return_start.emit())
 
@@ -923,8 +1077,10 @@ class CameraWorker(QThread):
 
     def run(self):
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+        cap.set(cv2.CAP_PROP_FPS, 30)
 
         if not cap.isOpened():
             print("CameraWorker: failed to open camera index 0.")
@@ -938,8 +1094,10 @@ class CameraWorker(QThread):
                 if not self.isRunning():
                     break
                 cap.open(0, cv2.CAP_DSHOW)
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+                cap.set(cv2.CAP_PROP_FPS, 30)
                 continue
 
             ret, frame = cap.read()

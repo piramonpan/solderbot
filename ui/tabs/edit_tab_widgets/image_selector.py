@@ -35,8 +35,8 @@ class TakeImageThread(QThread):
     def run(self):
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
         time.sleep(1)
 
 
@@ -54,8 +54,8 @@ class TakeImageThread(QThread):
                     break
                 cap.open(1, cv2.CAP_DSHOW)
                 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
                 continue
 
             ret, cv_img = cap.read()
@@ -347,6 +347,7 @@ class SelectorPage(QWidget):
 
 class ImagePopUp(QMainWindow):
     image_captured_signal = pyqtSignal(object)
+    closed = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -418,6 +419,7 @@ class ImagePopUp(QMainWindow):
         self.camera_thread._run_flag = False
         self.camera_thread.quit()
         self.camera_thread.wait()
+        self.closed.emit()
         event.accept()
 
 

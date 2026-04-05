@@ -1,5 +1,16 @@
+import functools
+import warnings
+
 from PyQt6.QtCore import QPropertyAnimation, QEasingCurve, QPoint, Qt
 from PyQt6.QtWidgets import QGraphicsOpacityEffect, QPushButton, QLabel
+
+
+def deprecated(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        warnings.warn(f"{func.__name__} is deprecated and will be removed in a future version.", DeprecationWarning, stacklevel=2)
+        return func(*args, **kwargs)
+    return wrapper
 
 class UIAnimation():
     # Store animations here so they don't get deleted by Python
@@ -41,6 +52,7 @@ class UIAnimation():
             UIAnimation.fade_in_widget(button, 1000)
 
     @staticmethod
+    @deprecated
     def fade_out_widget(widget, duration=500):
         effect = QGraphicsOpacityEffect(widget)
         widget.setGraphicsEffect(effect)
