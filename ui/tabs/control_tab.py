@@ -23,8 +23,9 @@ from PyQt6.QtGui import QImage, QPixmap
 from core.grbl_controller import GRBLController
 import json
 import os
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox, QLineEdit
 import re
+from esp32.ESP32 import ESP32
 
 logger = logging.getLogger("SolderBot")
 
@@ -375,7 +376,7 @@ class ControlTab(QWidget):
     request_clean = pyqtSignal()
     request_first_hole_pan = pyqtSignal(float, float, float)
 
-    def __init__(self, logger=logger, gcode_controller=None, esp32_controller =None, testing=True):
+    def __init__(self, logger=logger, gcode_controller=None, esp32_controller=None, testing=True):
         super().__init__()
         self.gcode_controller = gcode_controller
         self.logger = logger
@@ -384,7 +385,7 @@ class ControlTab(QWidget):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(25)
 
-        self.esp32 = esp32_controller
+        self.esp32: ESP32 = esp32_controller
 
         self.init_ui()
 
@@ -393,29 +394,28 @@ class ControlTab(QWidget):
         self.camera_worker.frame_received.connect(self.update_label)
         self.camera_worker.start()
 
-        if self.gcode_controller or testing:
-            self.gcode_thread = QThread()
-            self.worker = GCodeWorker(self.gcode_controller)
-            self.worker.moveToThread(self.gcode_thread)
+        self.gcode_thread = QThread()
+        self.worker = GCodeWorker(self.gcode_controller)
+        self.worker.moveToThread(self.gcode_thread)
 
-            # Connect signals to worker slots 
-            self.request_jog.connect(self.worker.execute_jog)
-            self.request_home.connect(self.worker.execute_home)
-            self.request_first.connect(self.worker.execute_find_workspace)
-            self.request_soldering.connect(self.worker.execute_soldering)
-            self.request_grid_move.connect(self.worker.execute_goto_grid)
-            self.request_custom_solder.connect(self.worker.execute_custom_solder_2)
-            self.request_return_start.connect(self.worker.execute_return_to_start)
-            self.request_set_zero_workspace.connect(
-                self.worker.execute_set_zero_workspace
-            )
-            self.request_extruding.connect(self.worker.execute_extruding)
-            self.request_clean.connect(self.worker.execute_clean)
-            self.request_first_hole_pan.connect(self.worker.execute_pan_test)
-            self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
+        # Connect signals to worker slots 
+        self.request_jog.connect(self.worker.execute_jog)
+        self.request_home.connect(self.worker.execute_home)
+        self.request_first.connect(self.worker.execute_find_workspace)
+        self.request_soldering.connect(self.worker.execute_soldering)
+        self.request_grid_move.connect(self.worker.execute_goto_grid)
+        self.request_custom_solder.connect(self.worker.execute_custom_solder_2)
+        self.request_return_start.connect(self.worker.execute_return_to_start)
+        self.request_set_zero_workspace.connect(
+            self.worker.execute_set_zero_workspace
+        )
+        self.request_extruding.connect(self.worker.execute_extruding)
+        self.request_clean.connect(self.worker.execute_clean)
+        self.request_first_hole_pan.connect(self.worker.execute_pan_test)
+        self.worker.log_requested.connect(lambda msg: self.logger.info(msg))
 
-            self.gcode_thread.start()
-            self.connect_buttons()
+        self.gcode_thread.start()
+        self.connect_buttons()
 
         self.jog_widget.setEnabled(True)
         self.btn_return_start.setEnabled(False)
@@ -486,6 +486,10 @@ class ControlTab(QWidget):
         # --- Temperature Control Group ---
         temp_group = QGroupBox("Temperature Control")
         temp_layout = QVBoxLayout()
+        # Live temperature label
+        self.label_live_temp = QLabel("Current Temp: --- °C")
+        self.label_live_temp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        temp_layout.addWidget(self.label_live_temp)
         self.btn_iron_on = QPushButton("Iron On")
         self.btn_iron_off = QPushButton("Iron Off")
         temp_btn_layout = QHBoxLayout()
@@ -493,13 +497,12 @@ class ControlTab(QWidget):
         temp_btn_layout.addWidget(self.btn_iron_off)
         temp_layout.addLayout(temp_btn_layout)
         temp_set_layout = QHBoxLayout()
-        self.spin_temp = QSpinBox()
-        self.spin_temp.setRange(100, 500)
-        self.spin_temp.setValue(350)
-        self.spin_temp.setSuffix(" °C")
+        self.edit_temp = QLineEdit()
+        self.edit_temp.setPlaceholderText("300")
         self.btn_set_temp = QPushButton("Set Temp")
         temp_set_layout.addWidget(QLabel("Set Temperature:"))
-        temp_set_layout.addWidget(self.spin_temp)
+        temp_set_layout.addWidget(self.edit_temp)
+        temp_set_layout.addWidget(QLabel("°C"))
         temp_set_layout.addWidget(self.btn_set_temp)
         temp_layout.addLayout(temp_set_layout)
         temp_group.setLayout(temp_layout)
@@ -519,6 +522,19 @@ class ControlTab(QWidget):
 
         self.main_layout.addLayout(left_panel, stretch=2)
         self.main_layout.addLayout(right_panel, stretch=1)
+
+        # Timer for updating live temperature
+        from PyQt6.QtCore import QTimer
+        self.temp_timer = QTimer(self)
+        self.temp_timer.timeout.connect(self.update_live_temp)
+        self.temp_timer.start(500)  # update every 500 ms
+
+    def update_live_temp(self):
+        if self.esp32 and getattr(self.esp32, 'latest_temp_data', None):
+            currentTemp = self.esp32.latest_temp_data
+            self.label_live_temp.setText(f"Current Temp: {currentTemp} °C")
+        else:
+            self.label_live_temp.setText("Current Temp: --- °C")
 
     def connect_buttons(self):
         # Jogging
@@ -573,7 +589,12 @@ class ControlTab(QWidget):
 
     def set_temp_clicked(self):
         if self.esp32 and self.esp32.connected():
-            temp = self.spin_temp.value()
+            temp_text = self.edit_temp.text().strip()
+            try:
+                temp = int(temp_text)
+            except ValueError:
+                self.logger.error("Invalid temperature input. Please enter a number.")
+                return
             success = self.esp32.set_temp(temp)
             if success:
                 self.logger.info(f"Set soldering iron temperature to {temp}°C.")

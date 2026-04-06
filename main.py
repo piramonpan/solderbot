@@ -10,7 +10,7 @@ from core.grbl_controller import GRBLController
 from PyQt6.QtWidgets import QSizePolicy
 from esp32.ESP32 import ESP32
 
-PORT = "COM4"  # change to correct port
+PORT = "COM6"  # change to correct port
 
 class SolderBotApp(QMainWindow):
     def __init__(self, test_mode):
@@ -77,7 +77,7 @@ class SolderBotApp(QMainWindow):
         self.sidebar_layout.setSpacing(10)
 
         # Toggle Button
-        self.btn_toggle = QPushButton(" ☰")
+        self.btn_toggle = QPushButton("☰")
         self.btn_toggle.setObjectName("btn_toggle")
         self.btn_toggle.setFixedSize(50, 40)
         self.btn_toggle.clicked.connect(self.toggle_menu)
