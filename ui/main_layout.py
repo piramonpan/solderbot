@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QSizePolicy, QDoubleSpinBox, QComboBox, QGridLayout,
     QApplication, QSpinBox,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve, QPoint
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve, QPoint, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont
 
 from ui.tabs.control_tab import GCodeWorker, CameraWorker, JogControlPanel
@@ -507,6 +507,10 @@ class Step5Run(_StepBase):
         temp_group = QGroupBox("Temperature")
         temp_layout = QVBoxLayout()
         temp_layout.setSpacing(6)
+        self.lbl_live_temp = QLabel("Current Temp: --- °C")
+        self.lbl_live_temp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_live_temp.setObjectName("status_label")
+        temp_layout.addWidget(self.lbl_live_temp)
         iron_row = QHBoxLayout()
         self.btn_iron_on  = QPushButton("Iron On")
         self.btn_iron_off = QPushButton("Iron Off")
@@ -1134,6 +1138,21 @@ class SolderBotMainLayout(QWidget):
         jt.request_return_start.connect(self.gcode_worker.execute_return_to_start)
 
         self.gcode_thread.start()
+        self._esp32 = esp32
+        self._start_temp_timer()
+
+    def _start_temp_timer(self):
+        self._temp_timer = QTimer(self)
+        self._temp_timer.timeout.connect(self._update_live_temp)
+        self._temp_timer.start(500)
+
+    def _update_live_temp(self):
+        esp32 = getattr(self, "_esp32", None)
+        lbl = self.workflow.s5.lbl_live_temp
+        if esp32 and esp32.latest_temp_data is not None:
+            lbl.setText(f"Current Temp: {esp32.latest_temp_data:.1f} °C")
+        else:
+            lbl.setText("Current Temp: --- °C")
 
     def _update_step0_status(self):
         s0 = self.workflow.s0
