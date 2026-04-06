@@ -504,6 +504,31 @@ class Step5Run(_StepBase):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        temp_group = QGroupBox("Temperature")
+        temp_layout = QVBoxLayout()
+        temp_layout.setSpacing(6)
+        iron_row = QHBoxLayout()
+        self.btn_iron_on  = QPushButton("Iron On")
+        self.btn_iron_off = QPushButton("Iron Off")
+        self.btn_iron_on.setFixedHeight(32)
+        self.btn_iron_off.setFixedHeight(32)
+        iron_row.addWidget(self.btn_iron_on)
+        iron_row.addWidget(self.btn_iron_off)
+        temp_layout.addLayout(iron_row)
+        set_row = QHBoxLayout()
+        set_row.addWidget(QLabel("Set:"))
+        self.spin_temp = QSpinBox()
+        self.spin_temp.setRange(100, 500)
+        self.spin_temp.setValue(350)
+        self.spin_temp.setSuffix(" °C")
+        self.btn_set_temp = QPushButton("Set Temp")
+        self.btn_set_temp.setFixedHeight(28)
+        set_row.addWidget(self.spin_temp, stretch=1)
+        set_row.addWidget(self.btn_set_temp)
+        temp_layout.addLayout(set_row)
+        temp_group.setLayout(temp_layout)
+        self._root.addWidget(temp_group)
+
         prog_group = QGroupBox("Progress")
         prog_layout = QVBoxLayout()
         prog_layout.setSpacing(8)
@@ -647,6 +672,9 @@ class WorkflowPanel(QWidget):
     request_start_sequence = pyqtSignal(str)
     request_take_image     = pyqtSignal()
     request_connect        = pyqtSignal(str)
+    request_iron_on        = pyqtSignal()
+    request_iron_off       = pyqtSignal()
+    request_set_temp       = pyqtSignal(int)
 
     def __init__(self, logger=None, camera_worker=None, parent=None):
         super().__init__(parent)
@@ -731,6 +759,11 @@ class WorkflowPanel(QWidget):
         self.s5.btn_start.clicked.connect(self._start_soldering)
         self.s5.btn_clean.clicked.connect(lambda: self.request_clean.emit())
         self.s5.btn_return.clicked.connect(lambda: self.request_return_start.emit())
+        self.s5.btn_iron_on.clicked.connect(lambda: self.request_iron_on.emit())
+        self.s5.btn_iron_off.clicked.connect(lambda: self.request_iron_off.emit())
+        self.s5.btn_set_temp.clicked.connect(
+            lambda: self.request_set_temp.emit(self.s5.spin_temp.value())
+        )
 
     def go_to(self, n: int):
         self.stack.slide_to(n)
@@ -1089,6 +1122,9 @@ class SolderBotMainLayout(QWidget):
         wf.request_first_hole_pan.connect(self.gcode_worker.execute_pan_test)
         wf.request_start_sequence.connect(self.gcode_worker.execute_start_line_soldering)
         wf.request_take_image.connect(self.gcode_worker.execute_take_image)
+        wf.request_iron_on.connect(self.gcode_worker.execute_iron_on)
+        wf.request_iron_off.connect(self.gcode_worker.execute_iron_off)
+        wf.request_set_temp.connect(self.gcode_worker.execute_set_temp)
 
         jt = self.jog_tab
         jt.request_jog.connect(self.gcode_worker.execute_jog)

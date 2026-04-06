@@ -354,6 +354,30 @@ class GCodeWorker(QObject):
             self.log_requested.emit(f"G-Code Error: {str(e)}")
 
     @pyqtSlot()
+    def execute_iron_on(self):
+        if self.esp32 and self.esp32.connected():
+            success = self.esp32.turn_on_soldering_iron()
+            self.log_requested.emit("Soldering iron ON." if success else "Failed to turn ON soldering iron.")
+        else:
+            self.log_requested.emit("ESP32 not connected.")
+
+    @pyqtSlot()
+    def execute_iron_off(self):
+        if self.esp32 and self.esp32.connected():
+            success = self.esp32.turn_off_soldering_iron()
+            self.log_requested.emit("Soldering iron OFF." if success else "Failed to turn OFF soldering iron.")
+        else:
+            self.log_requested.emit("ESP32 not connected.")
+
+    @pyqtSlot(int)
+    def execute_set_temp(self, temp: int):
+        if self.esp32 and self.esp32.connected():
+            success = self.esp32.set_temp(temp)
+            self.log_requested.emit(f"Temperature set to {temp}°C." if success else "Failed to set temperature.")
+        else:
+            self.log_requested.emit("ESP32 not connected.")
+
+    @pyqtSlot()
     def execute_take_image(self):
         """Move gantry to a safe overhead position for capturing an image."""
         if not self.controller:
