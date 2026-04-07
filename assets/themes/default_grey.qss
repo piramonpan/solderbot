@@ -117,6 +117,20 @@ QPushButton#btn_action_red {
 }
 QPushButton#btn_action_red:hover { background-color: #F8DEDE; border-color: #CC3333; }
 
+QPushButton#btn_iron_on {
+    background-color: #EEF7F2; color: #2D7A4F; border: 1px solid #B8DEC9;
+    font-size: 15px; font-weight: 600; min-height: 0px; padding: 2px 8px;
+}
+QPushButton#btn_iron_on:hover { background-color: #DFF0E8; border-color: #2D7A4F; }
+
+QPushButton#btn_iron_off {
+    background-color: #FDF0F0; color: #CC3333; border: 1px solid #F0C0C0;
+    font-size: 15px; font-weight: 600; min-height: 0px; padding: 2px 8px;
+}
+QPushButton#btn_iron_off:hover { background-color: #F8DEDE; border-color: #CC3333; }
+
+QPushButton#btn_set_temp { font-size: 12px; min-height: 0px; padding: 2px 8px; }
+
 QPushButton#btn_action_accent {
     background-color: #595959;
     color: #F2F2F2;
@@ -271,8 +285,9 @@ QLabel {
 
 /* ── Header labels ── */
 QLabel#header_title { font-size: 24px; font-weight: 700; color: #3A3A3A; }
-QLabel#welcome_title { font-size: 28px; font-weight: 700; color: #3A3A3A; }
-QLabel#welcome_sub   { font-size: 13px; font-weight: 400; color: #A5A5A5; }
+QLabel#welcome_title { font-size: 46px; font-weight: 700; color: #3A3A3A; }
+QLabel#live_temp_big { font-size: 36px; font-weight: 700; color: #C07020; }
+QLabel#welcome_sub   { font-size: 15px; font-weight: 400; color: #A5A5A5; }
 QLabel#checklist_dot { font-size: 16px; color: #595959; background: transparent; }
 QLabel#lbl_conn { font-size: 13px; color: #7F7F7F; }
 QLabel#lbl_pos { font-family: 'Consolas', monospace; font-size: 13px; color: #7F7F7F; }

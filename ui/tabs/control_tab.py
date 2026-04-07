@@ -178,7 +178,7 @@ class GCodeWorker(QObject):
                 self.controller.writer.rapid_positioning(x=x_coord, y=y_coord),
                 self.controller.writer.positioning(reference="relative"),
                 self.controller.writer.rapid_positioning(x=1, y=None),
-                self.controller.writer.move_up_down(z=-8),
+                self.controller.writer.move_up_down(z=-5),
                 self.controller.writer.rapid_positioning(x=-1, y=None, z=-2),
             ]
             self.controller.send_commands(commands=commands)
@@ -254,8 +254,17 @@ class GCodeWorker(QObject):
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
 
+    @pyqtSlot()
+    def execute_soldering_full(self, board_data_path):
+
+        # line solder first
+        self.execute_line_soldering(board_data_path)
+
+        # point solder next
+        self.execute_point_soldering(board_data_path)
+
     @pyqtSlot(str)
-    def execute_start_soldering_sequence(self, board_data_path):
+    def execute_point_soldering(self, board_data_path):
         try:
             with open(board_data_path, 'r') as f:
                 board_data = json.load(f)
@@ -281,21 +290,15 @@ class GCodeWorker(QObject):
                 counter = 0
                 time.sleep(20)
 
-            time.sleep(2)
             self.execute_goto_grid_2(row - 1, col - 1)
-            time.sleep(2)
-            self.execute_custom_solder_2(extrude_time=0.5, hold_time=6)
-            time.sleep(2)
+            self.execute_custom_solder_2(extrude_time=0.5, hold_time=2)
 
             jog_cmds = [
                 self.controller.writer.positioning(reference="relative"),
                 self.controller.writer.rapid_positioning(x=1, y=None, z=2),
-                # self.controller.writer.move_up_down(z=1),
-                # self.controller.writer.rapid_positioning(x=1, y=None),
                 self.controller.writer.move_up_down(z=8),
             ]
             self.controller.send_commands(commands=jog_cmds)
-            time.sleep(2)
             counter += 1
 
         # Go back to start after finishing
@@ -473,7 +476,98 @@ class GCodeWorker(QObject):
         self.execute_find_workspace()
 
     @pyqtSlot(str)
-    def execute_start_line_soldering(self, board_data_path):
+    def execute_line_soldering(self, board_data_path):
+        try:
+            with open(board_data_path, 'r') as f:
+                board_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.log_requested.emit(f"Board data error: {e}")
+            return
+
+        self.log_requested.emit("Starting automated line soldering...")
+        
+        # Initial setup: Lift Z
+        self.controller.send_commands([
+            self.controller.writer.positioning(reference="relative"),
+            self.controller.writer.move_up_down(z=7)
+        ])
+
+        for line in board_data.get("lines", []):
+            rs, cs = line["start"]
+            re, ce = line["end"]
+
+            # Determine orientation automatically
+            is_horiz = (cs != ce)
+            solder_range = abs(cs - ce) + 1 if is_horiz else abs(rs - re) + 1
+            
+            # Shared Jog Command
+            jog_up = [
+                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.rapid_positioning(x=1, z=2),
+                self.controller.writer.move_up_down(z=5)
+            ]
+
+            for i in range(solder_range):
+                # Calculate coordinates based on orientation
+                curr_r = rs + (0 if is_horiz else i)
+                curr_c = cs + (i if is_horiz else 0)
+                
+                self.execute_goto_grid_2(curr_r - 1, curr_c - 1)
+                self.execute_custom_solder_2(
+                    extrude_time=0.5 if is_horiz else 0.3, 
+                    hold_time=0.5 if is_horiz else 0.2
+                )
+                self.controller.send_commands(jog_up)
+
+                if i == 0: 
+                    continue # Adhesion logic
+
+                # Mid-move logic: Horizontal uses X-axis offset, Vertical uses Y-axis
+                y_val = -1.6 if is_horiz else 1.6
+
+                self.controller.send_commands([
+                    self.controller.writer.positioning(reference="relative"),
+                    self.controller.writer.rapid_positioning(
+                        x=(-1 + y_val) if is_horiz else -1, 
+                        y=None if is_horiz else y_val
+                    ),
+                    self.controller.writer.move_up_down(z=-6.7)
+                ])
+
+                # Shimmy logic: Apply interpolation to the moving axis
+                shimmy = [
+                    self.controller.writer.start_dispensing(speed=180),
+                    self.controller.writer.positioning(reference="relative")
+                ]
+                
+                # Add movement steps based on axis
+                if is_horiz:
+                    shimmy.extend([
+                        self.controller.writer.linear_interpolation(x=-0.5, y=None, f=400),
+                        self.controller.writer.linear_interpolation(x=-0.5, y=None, f=400),
+                        self.controller.writer.linear_interpolation(x=1.2, y=None, f=400),
+                    ])
+                else:
+                    shimmy.extend([
+                        self.controller.writer.linear_interpolation(x=None, y=0.5, f=400),
+                        self.controller.writer.linear_interpolation(x=None, y=0.5, f=400),
+                        self.controller.writer.linear_interpolation(x=None, y=-1.2, f=400),
+                    ])
+
+
+                shimmy.extend([self.controller.writer.move_up_down(z=-0.3),
+                        self.controller.writer.stop_dispensing()])
+                
+                self.controller.send_commands(shimmy)
+                time.sleep(0.2)
+                self.controller.send_commands(jog_up)
+                time.sleep(0.2)
+
+        self.execute_return_to_start()
+        self.log_requested.emit("Soldering sequence complete.")
+
+    @pyqtSlot(str)
+    def execute_start_line_horizontal(self, board_data_path):
         try:
             with open(board_data_path, 'r') as f:
                 board_data = json.load(f)
@@ -487,7 +581,7 @@ class GCodeWorker(QObject):
         # Jog Z up before starting
         commands = [
             self.controller.writer.positioning(reference="relative"),
-            self.controller.writer.move_up_down(z=10),
+            self.controller.writer.move_up_down(z=7),
         ]
         self.controller.send_commands(commands=commands)
 
@@ -499,22 +593,17 @@ class GCodeWorker(QObject):
             row_s, col_s = line["start"][0], line["start"][1]
             row_e, col_e = line["end"][0], line["end"][1]
 
-            for i in range(4):        
+            for i in range(2):        
                 # Solder beginning hole
-                time.sleep(2)
-                self.execute_goto_grid_2((row_s - 1 + i), col_s - 1)
-                time.sleep(1)
-                self.execute_custom_solder_2(extrude_time=0.5, hold_time=1)
-                time.sleep(1)
+                self.execute_goto_grid_2((row_s - 1), (col_s - 1 + i))
+                self.execute_custom_solder_2(extrude_time=0.5,hold_before=0.2, hold_time=0.5)
 
                 jog_up = [
                     self.controller.writer.positioning(reference="relative"),
                     self.controller.writer.rapid_positioning(x=1, y=None, z=2),
-                    self.controller.writer.move_up_down(z=8),
+                    self.controller.writer.move_up_down(z=5),
                 ]
                 self.controller.send_commands(commands=jog_up)
-                time.sleep(1)
-
                 
                 if i == 0:
                     continue # dont move to end hole on first iteration, just solder the start hole multiple times for better adhesion
@@ -523,26 +612,26 @@ class GCodeWorker(QObject):
                 # Move +y 2.54/2 to midpoint between the two holes
                 x_mid = ((row_s - 1) + (row_e - 1)) / 2.0 * 2.54
                 y_mid = (2.54 / 2.0)  # Half the distance to move in Y to get to midpoint
-                y_mid = 1.6  # Half the distance to move in Y to get to midpoint
+                y_mid = -1.6  # Half the distance to move in Y to get to midpoint
 
                 mid_move = [
                     self.controller.writer.positioning(reference="relative"),
-                    self.controller.writer.rapid_positioning(x=-1, y=y_mid),
-                    self.controller.writer.move_up_down(z=-9.7),
+                    self.controller.writer.rapid_positioning(x=-1+y_mid, y=None),
+                    self.controller.writer.move_up_down(z=-6.7),
                 ]
                 self.controller.send_commands(commands=mid_move)
 
                 # Hold for 3 sec then extrude 1 sec
-                time.sleep(2)
+                time.sleep(0.5)
                 # self.execute_custom_solder_2(extrude_time=1.1, hold_time=0.2)
 
                 shimmy = [
-                    self.controller.writer.start_dispensing(speed=200),
+                    self.controller.writer.start_dispensing(speed=180),
                     self.controller.writer.positioning(reference="relative"),
-                    self.controller.writer.linear_interpolation(x=None, y=0.5, f=300),
-                    self.controller.writer.linear_interpolation(x=None, y=-1, f=300),
-                    self.controller.writer.linear_interpolation(x=None, y=1, f=300),
-                    self.controller.writer.linear_interpolation(x=None, y=-1, f=300),
+                    self.controller.writer.linear_interpolation(x=-0.5, y=None, f=400),
+                    self.controller.writer.linear_interpolation(x=-0.5, y=None, f=400),
+                    self.controller.writer.linear_interpolation(x=1.2, y=None, f=400),
+                    # self.controller.writer.linear_interpolation(x=None, y=-1, f=400),
                     self.controller.writer.move_up_down(z=-0.3),
                     self.controller.writer.stop_dispensing()
                 ]
@@ -551,7 +640,88 @@ class GCodeWorker(QObject):
                 # Wait 0.2 sec then immediately lift up
                 time.sleep(0.2)
                 self.controller.send_commands(commands=jog_up)
-                time.sleep(2)
+                time.sleep(0.5)
+
+                counter += 1
+
+        self.execute_return_to_start()
+
+        self.log_requested.emit("Soldering sequence complete.")
+
+    @pyqtSlot(str)
+    def execute_start_line_vertical(self, board_data_path):
+        try:
+            with open(board_data_path, 'r') as f:
+                board_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.log_requested.emit(f"Board data error: {e}")
+            return
+
+        self.log_requested.emit("Starting line soldering sequence...")
+        time.sleep(1)
+
+        # Jog Z up before starting
+        commands = [
+            self.controller.writer.positioning(reference="relative"),
+            self.controller.writer.move_up_down(z=7),
+        ]
+        self.controller.send_commands(commands=commands)
+
+        counter = 0
+
+        print("DEBUG: Starting line soldering with points:", board_data.get("lines", []))  # Debugging output
+    
+        for line in board_data.get("lines", []):
+            row_s, col_s = line["start"][0], line["start"][1]
+            row_e, col_e = line["end"][0], line["end"][1]
+
+            solder_range = abs(row_s - row_e)
+
+            # check that cols are the same for vertical line
+            if col_s != col_e:
+                self.log_requested.emit(f"Warning: For vertical line, column values must be the same. Got col_s={col_s}, col_e={col_e}. Using col_s for both.") 
+
+            for i in range(solder_range + 1):        
+                # Solder beginning hole
+                self.execute_goto_grid_2((row_s - 1 + i), (col_s - 1))
+                self.execute_custom_solder_2(extrude_time=0.3, hold_before=0.2, hold_time=0.2)
+
+                jog_up = [
+                    self.controller.writer.positioning(reference="relative"),
+                    self.controller.writer.rapid_positioning(x=1, y=None, z=2),
+                    self.controller.writer.move_up_down(z=5),
+                ]
+                self.controller.send_commands(commands=jog_up)
+                
+                if i == 0:
+                    continue # dont move to end hole on first iteration, just solder the start hole multiple times for better adhesion
+                
+                #DEBUG
+                y_mid = 1.6  # Half the distance to move in Y to get to midpoint
+
+                mid_move = [
+                    self.controller.writer.positioning(reference="relative"),
+                    self.controller.writer.rapid_positioning(x=-1, y=y_mid),
+                    self.controller.writer.move_up_down(z=-6.7),
+                ]
+                self.controller.send_commands(commands=mid_move)
+
+                time.sleep(0.5)
+
+                shimmy = [
+                    self.controller.writer.start_dispensing(speed=180),
+                    self.controller.writer.positioning(reference="relative"),
+                    self.controller.writer.linear_interpolation(x=None, y=0.5, f=400),
+                    self.controller.writer.linear_interpolation(x=None, y=0.5, f=400),
+                    self.controller.writer.linear_interpolation(x=None, y=-1.2, f=400),
+                    self.controller.writer.move_up_down(z=-0.3),
+                    self.controller.writer.stop_dispensing()
+                ]
+
+                self.controller.send_commands(commands=shimmy)
+                time.sleep(0.2)
+                self.controller.send_commands(commands=jog_up)
+                time.sleep(0.5)
 
                 counter += 1
 

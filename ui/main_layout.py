@@ -65,9 +65,16 @@ class StepIndicator(QWidget):
         self._build()
 
     def _build(self):
-        row = QHBoxLayout(self)
-        row.setContentsMargins(16, 10, 16, 10)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addStretch(1)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 8, 0, 8)
         row.setSpacing(0)
+        outer.addLayout(row, stretch=6)
+        outer.addStretch(1)
 
         for i, name in enumerate(self.steps):
             cell = QWidget()
@@ -299,7 +306,7 @@ class Step0Setup(_StepBase):
         lbl_sub.setObjectName("welcome_sub")
         self._root.addWidget(lbl_sub)
 
-        self._root.addSpacing(12)
+        self._root.addSpacing(9)
 
         # ── Pre-flight checklist ─────────────────────────────────────
         checklist = QGroupBox("Before you begin")
@@ -472,6 +479,11 @@ class Step3Select(_StepBase):
         nav.addWidget(self.btn_back)
         nav.addWidget(self.btn_next)
         self._root.addLayout(nav)
+    
+     # helper function for image overlay test
+    def image_on_board(self, first_hole_pixel):
+        self.scene.load_background(first_hole=first_hole_pixel)
+        self.scene.draw_board()
 
 
 class Step4Zero(_StepBase):
@@ -505,32 +517,44 @@ class Step5Run(_StepBase):
         super().__init__(parent)
 
         temp_group = QGroupBox("Temperature")
-        temp_layout = QVBoxLayout()
-        temp_layout.setSpacing(6)
-        self.lbl_live_temp = QLabel("Current Temp: --- °C")
+        temp_row = QHBoxLayout()
+        temp_row.setSpacing(12)
+
+        # ── Left: current temp + set temp ───────────────────────────
+        left_col = QVBoxLayout()
+        left_col.setSpacing(8)
+
+        self.lbl_live_temp = QLabel("---")
         self.lbl_live_temp.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_live_temp.setObjectName("status_label")
-        temp_layout.addWidget(self.lbl_live_temp)
-        iron_row = QHBoxLayout()
-        self.btn_iron_on  = QPushButton("Iron On")
-        self.btn_iron_off = QPushButton("Iron Off")
-        self.btn_iron_on.setFixedHeight(32)
-        self.btn_iron_off.setFixedHeight(32)
-        iron_row.addWidget(self.btn_iron_on)
-        iron_row.addWidget(self.btn_iron_off)
-        temp_layout.addLayout(iron_row)
+        self.lbl_live_temp.setObjectName("live_temp_big")
+        left_col.addWidget(self.lbl_live_temp)
+
         set_row = QHBoxLayout()
+        set_row.setSpacing(6)
         set_row.addWidget(QLabel("Set:"))
         self.spin_temp = QSpinBox()
         self.spin_temp.setRange(100, 500)
         self.spin_temp.setValue(350)
         self.spin_temp.setSuffix(" °C")
-        self.btn_set_temp = QPushButton("Set Temp")
-        self.btn_set_temp.setFixedHeight(28)
+        self.btn_set_temp = QPushButton("Apply")
+        self.btn_set_temp.setObjectName("btn_set_temp")
         set_row.addWidget(self.spin_temp, stretch=1)
         set_row.addWidget(self.btn_set_temp)
-        temp_layout.addLayout(set_row)
-        temp_group.setLayout(temp_layout)
+        left_col.addLayout(set_row)
+
+        # ── Right: iron on/off ───────────────────────────────────────
+        right_col = QVBoxLayout()
+        right_col.setSpacing(8)
+        self.btn_iron_on  = QPushButton("Iron On")
+        self.btn_iron_off = QPushButton("Iron Off")
+        self.btn_iron_on.setObjectName("btn_iron_on")
+        self.btn_iron_off.setObjectName("btn_iron_off")
+        right_col.addWidget(self.btn_iron_on)
+        right_col.addWidget(self.btn_iron_off)
+
+        temp_row.addLayout(left_col, stretch=3)
+        temp_row.addLayout(right_col, stretch=2)
+        temp_group.setLayout(temp_row)
         self._root.addWidget(temp_group)
 
         prog_group = QGroupBox("Progress")
@@ -552,7 +576,7 @@ class Step5Run(_StepBase):
         self.spin_extrude.setValue(0.5)
         self.spin_extrude.setSuffix(" s")
         self.spin_dwell = QDoubleSpinBox()
-        self.spin_dwell.setValue(6.0)
+        self.spin_dwell.setValue(2.0)
         self.spin_dwell.setSuffix(" s")
         param_grid.addWidget(QLabel("Extrude:"), 0, 0)
         param_grid.addWidget(self.spin_extrude,  0, 1)
@@ -562,20 +586,9 @@ class Step5Run(_StepBase):
         self._root.addWidget(param_group)
 
         self.btn_start = _action_btn("Start Soldering", _GREEN, "#5AA078", "#C8ECD8")
-        self._root.addWidget(self.btn_start, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.btn_start.setFixedHeight(70)
+        self._root.addWidget(self.btn_start, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        self.btn_stop  = _action_btn("Stop", _RED, "#A04040", "#ECC8C8")
-        self.btn_clean = QPushButton("Clean Tip")
-        self.btn_clean.setFixedHeight(40)
-        row.addWidget(self.btn_stop)
-        row.addWidget(self.btn_clean)
-        self._root.addLayout(row)
-
-        self.btn_return = QPushButton("Return to Start")
-        self.btn_return.setFixedHeight(32)
-        self._root.addWidget(self.btn_return)
         self._root.addStretch()
         self.btn_back = _back_btn()
         self._root.addWidget(self.btn_back)
@@ -694,13 +707,6 @@ class WorkflowPanel(QWidget):
         self.step_indicator = StepIndicator(
             ["Setup", "Workspace", "Capture", "Select", "Zero", "Run"]
         )
-        root.addWidget(self.step_indicator)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFixedHeight(1)
-        sep.setObjectName("workflow_sep")
-        root.addWidget(sep)
 
         self.stack = AnimatedStack()
         self.s0 = Step0Setup()
@@ -761,17 +767,18 @@ class WorkflowPanel(QWidget):
 
         self.s5.btn_back.clicked.connect(lambda: self.go_to(4))
         self.s5.btn_start.clicked.connect(self._start_soldering)
-        self.s5.btn_clean.clicked.connect(lambda: self.request_clean.emit())
-        self.s5.btn_return.clicked.connect(lambda: self.request_return_start.emit())
         self.s5.btn_iron_on.clicked.connect(lambda: self.request_iron_on.emit())
         self.s5.btn_iron_off.clicked.connect(lambda: self.request_iron_off.emit())
         self.s5.btn_set_temp.clicked.connect(
             lambda: self.request_set_temp.emit(self.s5.spin_temp.value())
         )
 
+    step_changed = pyqtSignal(int)
+
     def go_to(self, n: int):
         self.stack.slide_to(n)
         self.step_indicator.set_step(n)
+        self.step_changed.emit(n)
 
     # ── step 0 ────────────────────────────────────────────────────────────
     def _home_clicked(self):
@@ -831,13 +838,9 @@ class WorkflowPanel(QWidget):
         self.image_processor.first_hole_pixel = self.popup.page_sel.first_hole_pixel()
         self.image_processor.find_valleys(self.image_processor.keypoints)
         self.s3.scene.holes.clear()
-        self.s3.scene.load_background()
-        self.s3.scene.draw_board(
-            self.image_processor.cleaned_grid[:, 1].max() + 1,
-            self.image_processor.cleaned_grid[:, 0].max(),
-            self.image_processor.valid_y,
-            self.image_processor.valid_x,
-        )
+        ### Image on Board
+        self.s3.scene.load_background(first_hole=self.image_processor.first_hole_pixel)
+        self.s3.scene.draw_board()
         self.s2.btn_next.setEnabled(True)
         self.popup.close()
 
@@ -945,7 +948,7 @@ class WorkflowPanel(QWidget):
 class JogTab(QWidget):
     request_jog           = pyqtSignal(str, float)
     request_grid_move     = pyqtSignal(int, int)
-    request_custom_solder = pyqtSignal(float, float)
+    request_custom_solder = pyqtSignal(float, float, float)
     request_set_zero      = pyqtSignal()
     request_return_start  = pyqtSignal()
 
@@ -982,6 +985,7 @@ class JogTab(QWidget):
         self.request_custom_solder.emit(
             self.jog_widget.spin_extrude.value(),
             self.jog_widget.spin_time.value(),
+            self.jog_widget.spin_time.value(),
         )
 
 
@@ -1003,24 +1007,33 @@ class SolderBotMainLayout(QWidget):
         self.header.emergency_stop.connect(self._emergency_stop)
         root.addWidget(self.header)
 
+        self.workflow = WorkflowPanel(logger=logger)
+
+        step_bar_sep = QFrame()
+        step_bar_sep.setFrameShape(QFrame.Shape.HLine)
+        step_bar_sep.setFixedHeight(1)
+        step_bar_sep.setObjectName("workflow_sep")
+        root.addWidget(self.workflow.step_indicator)
+        root.addWidget(step_bar_sep)
+
         content = QHBoxLayout()
         content.setContentsMargins(10, 10, 10, 10)
         content.setSpacing(10)
 
         # Left column: camera (top half) + log (bottom half)
         self._left_col = QWidget()
-        self._left_col.setMaximumWidth(520)
+        self._left_col.setMaximumWidth(500)
         left_col_layout = QVBoxLayout(self._left_col)
         left_col_layout.setContentsMargins(0, 0, 0, 0)
         left_col_layout.setSpacing(6)
 
         self.camera_panel = CameraPanel()
-        left_col_layout.addWidget(self.camera_panel, stretch=1)
+        left_col_layout.addWidget(self.camera_panel, stretch=2)
 
         self.log_output = QPlainTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setObjectName("log_panel")
-        left_col_layout.addWidget(self.log_output, stretch=1)
+        left_col_layout.addWidget(self.log_output, stretch=3)
 
         content.addWidget(self._left_col, stretch=2)
 
@@ -1028,8 +1041,8 @@ class SolderBotMainLayout(QWidget):
         self.right_tabs.setTabPosition(QTabWidget.TabPosition.South)
         self.right_tabs.setDocumentMode(True)
         self.right_tabs.setMinimumWidth(360)
+        self.right_tabs.setMaximumWidth(1100)
 
-        self.workflow = WorkflowPanel(logger=logger)
         self.right_tabs.addTab(self.workflow, "Workflow")
 
         self.jog_tab = JogTab()
@@ -1067,8 +1080,11 @@ class SolderBotMainLayout(QWidget):
                                   grbl_controller.port if grbl_controller else "")
         self._btn_cam_toggle.clicked.connect(self._toggle_camera)
         self.workflow.request_connect.connect(self._on_connect_requested)
+        self.workflow.step_changed.connect(self._on_step_changed)
 
         self._update_step0_status()
+        # Hide camera for initial steps
+        self._set_camera_visible(False)
 
     # ── camera slide toggle ───────────────────────────────────────────────
     def _toggle_camera(self):
@@ -1090,9 +1106,17 @@ class SolderBotMainLayout(QWidget):
             self._cam_anim = QPropertyAnimation(self._left_col, b"maximumWidth")
             self._cam_anim.setDuration(220)
             self._cam_anim.setStartValue(0)
-            self._cam_anim.setEndValue(520)
+            self._cam_anim.setEndValue(500)
             self._cam_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
             self._cam_anim.start()
+
+    def _set_camera_visible(self, visible: bool):
+        if visible == self._cam_visible:
+            return
+        self._toggle_camera()
+
+    def _on_step_changed(self, n: int):
+        QTimer.singleShot(280, lambda: self._set_camera_visible(n >= 4))
 
     def _start_camera(self):
         self.camera_worker = CameraWorker()
@@ -1124,7 +1148,7 @@ class SolderBotMainLayout(QWidget):
         wf.request_clean.connect(self.gcode_worker.execute_clean)
         wf.request_return_start.connect(self.gcode_worker.execute_return_to_start)
         wf.request_first_hole_pan.connect(self.gcode_worker.execute_pan_test)
-        wf.request_start_sequence.connect(self.gcode_worker.execute_start_line_soldering)
+        wf.request_start_sequence.connect(self.gcode_worker.execute_start_line_soldering_vertical)
         wf.request_take_image.connect(self.gcode_worker.execute_take_image)
         wf.request_iron_on.connect(self.gcode_worker.execute_iron_on)
         wf.request_iron_off.connect(self.gcode_worker.execute_iron_off)
@@ -1150,9 +1174,9 @@ class SolderBotMainLayout(QWidget):
         esp32 = getattr(self, "_esp32", None)
         lbl = self.workflow.s5.lbl_live_temp
         if esp32 and esp32.latest_temp_data is not None:
-            lbl.setText(f"Current Temp: {esp32.latest_temp_data:.1f} °C")
+            lbl.setText(f"{esp32.latest_temp_data:.1f} °C")
         else:
-            lbl.setText("Current Temp: --- °C")
+            lbl.setText("--- °C")
 
     def _update_step0_status(self):
         s0 = self.workflow.s0

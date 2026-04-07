@@ -169,7 +169,10 @@ class ProtoBoardScene(QGraphicsScene):
                 min_dist_sq = min((x - dx)**2 + (y - dy)**2 for dx, dy in self.detected_holes)
                 if min_dist_sq >= threshold**2:
                     undetected.append((x, y))
-        return undetected
+            return undetected
+        
+        else:
+            return []  # no undetected holes to estimate
     
 
 class ProtoBoardSceneWithLines(ProtoBoardScene):
