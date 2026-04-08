@@ -149,7 +149,7 @@ class GCodeWriter:
     def probe_z(self):
         """ Probes the z-axis to find the height of the workpiece surface """
 
-        command = 'G38.2Z-30F150'  # Probe downwards to a maximum depth of 10mm at a feedrate of 100 mm/min
+        command = 'G38.2Z-30F250'  # Probe downwards to a maximum depth of 10mm at a feedrate of 100 mm/min
 
         return command
     
@@ -157,10 +157,9 @@ class GCodeWriter:
     def probe_z_pan(self):
         commands = []
         
-        commands.append('G38.2 Z-30 F150')  # Stage 1: Fast seek. Stops immediately when it hits the board.
+        commands.append('G38.2 Z-30 F300')  # Stage 1: Fast seek. Stops immediately when it hits the board.
         commands.append('G0 Z2')            # Stage 2: Retract slightly (2mm) to clear the trigger.
-        commands.append('G38.2 Z-5 F50')    # Stage 3: Slow "Fine" probe. Much more accurate.
-        commands.append('G92 Z0')           # Stage 4: Set this perfect touch-point as Zero.
+        commands.append('G38.2 Z-5 F100')    # Stage 3: Slow "Fine" probe. Much more accurate.
         commands.append('G0 Z5')            # Stage 5: Move to safe travel height.
 
         return commands
