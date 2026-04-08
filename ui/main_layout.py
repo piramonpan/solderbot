@@ -462,9 +462,12 @@ class Step3Select(_StepBase):
         self.btn_line  = QPushButton("Add Line")
         self.btn_line.setCheckable(True)
         self.btn_line.setFixedHeight(30)
+        self.btn_remove_line  = QPushButton("Remove Line")
+        self.btn_remove_line.setCheckable(True)
+        self.btn_remove_line.setFixedHeight(30)
         self.btn_clear = QPushButton("Clear")
         self.btn_clear.setFixedHeight(30)
-        for b in [self.btn_point, self.btn_line, self.btn_clear]:
+        for b in [self.btn_point, self.btn_line, self.btn_remove_line, self.btn_clear]:
             mode_row.addWidget(b)
         self._root.addLayout(mode_row)
 
@@ -748,10 +751,11 @@ class WorkflowPanel(QWidget):
         self.s3.btn_back.clicked.connect(lambda: self.go_to(2))
         self.s3.btn_point.clicked.connect(self._point_mode)
         self.s3.btn_line.clicked.connect(self._line_mode)
+        self.s3.btn_remove_line.clicked.connect(self._remove_line_mode)
         self.s3.btn_clear.clicked.connect(self._clear_board)
         self.s3.btn_next.clicked.connect(self._save_and_advance)
 
-        self.s4.btn_back.clicked.connect(lambda: self.go_to(3))
+        self.s4.btn_back.clicked.connect(self.clear_json)
         jp = self.s4.jog_panel
         jp.btn_x_pos.clicked.connect(lambda: self._jog("X",  1))
         jp.btn_x_neg.clicked.connect(lambda: self._jog("X", -1))
@@ -776,6 +780,8 @@ class WorkflowPanel(QWidget):
     step_changed = pyqtSignal(int)
 
     def go_to(self, n: int):
+        if n == 3:
+            self._clear_board()
         self.stack.slide_to(n)
         self.step_indicator.set_step(n)
         self.step_changed.emit(n)
@@ -852,7 +858,9 @@ class WorkflowPanel(QWidget):
     def _point_mode(self):
         if self.s3.btn_point.isChecked():
             self.s3.btn_line.setChecked(False)
+            self.s3.btn_remove_line.setChecked(False)
             self.s3.scene.add_line_mode  = False
+            self.s3.scene.remove_line_mode = False
             self.s3.scene.add_point_mode = True
         else:
             self.s3.scene.add_point_mode = False
@@ -860,25 +868,33 @@ class WorkflowPanel(QWidget):
     def _line_mode(self):
         if self.s3.btn_line.isChecked():
             self.s3.btn_point.setChecked(False)
+            self.s3.btn_remove_line.setChecked(False)
             self.s3.scene.add_point_mode = False
+            self.s3.scene.remove_line_mode = False
             self.s3.scene.add_line_mode  = True
         else:
             self.s3.scene.add_line_mode = False
+
+    def _remove_line_mode(self):
+        if self.s3.btn_remove_line.isChecked():
+            self.s3.btn_point.setChecked(False)
+            self.s3.btn_line.setChecked(False)
+            self.s3.scene.add_point_mode = False
+            self.s3.scene.add_line_mode  = False
+            self.s3.scene.remove_line_mode = True
+        else:
+            self.s3.scene.remove_line_mode = False
 
     def _clear_board(self):
         self.s3.scene.points.clear()
         self.s3.scene.start_lines.clear()
         self.s3.scene.end_lines.clear()
+        self.s3.scene.lines.clear()
         self.s3.scene.circles.clear()
         self.s3.scene.holes.clear()
         if self.image_processor:
-            self.s3.scene.load_background()
-            self.s3.scene.draw_board(
-                self.image_processor.cleaned_grid[:, 1].max() + 1,
-                self.image_processor.cleaned_grid[:, 0].max(),
-                self.image_processor.valid_y,
-                self.image_processor.valid_x,
-            )
+            self.s3.scene.load_background(first_hole=self.image_processor.first_hole_pixel)
+            self.s3.scene.draw_board()
         else:
             self.s3.scene.clear()
 
@@ -889,7 +905,7 @@ class WorkflowPanel(QWidget):
         def _hole(x, y):
             print(f"Calculating hole number for pixel ({x}, {y})")
             # Use the actual pitch from image processing instead of hardcoded 23
-            pitch = self.image_processor.pixel_mm_ratio * 3.81  # 3.81mm is the standard hole spacing on a protoboard
+            #pitch = self.image_processor.pixel_mm_ratio * 3.81  # 3.81mm is the standard hole spacing on a protoboard
             
             # Calculate grid coordinates (0-based, no radius subtraction needed since points are at centers)
             x_num = int((x - self.image_processor.first_hole_pixel[0]) / 22) + 1 # radius = 3, holespacing = 22
@@ -938,6 +954,26 @@ class WorkflowPanel(QWidget):
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Pan to first hole failed: {e}")
+                
+    def clear_json(self):
+        data = {
+            "camera_pixel_zero": (
+                self.image_processor.pixel_home.tolist()
+                if hasattr(self.image_processor.pixel_home, "tolist")
+                else self.image_processor.pixel_home
+            ),
+            "pixel_mm_ratio": self.image_processor.pixel_mm_ratio,
+            "first_hole": (
+                self.image_processor.first_hole_pixel.tolist() + [-22.4]
+                if hasattr(self.image_processor.first_hole_pixel, "tolist")
+                else list(self.image_processor.first_hole_pixel) + [0.0]
+            ),
+            "points": [],
+            "lines":  [],
+        }
+        with open("board_data.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        self.go_to(3)
 
     # ── step 5 ────────────────────────────────────────────────────────────
     def _start_soldering(self):

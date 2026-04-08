@@ -40,7 +40,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    theme = r"C:\Users\piram\Desktop\solderbot\assets\themes\default_grey.qss"
+    theme = r"assets\themes\default_grey.qss"
     with open(theme, "r") as f:
         app.setStyleSheet(f.read())
 
