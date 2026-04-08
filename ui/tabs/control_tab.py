@@ -81,26 +81,16 @@ class GCodeWorker(QObject):
         if not self.controller:
             return
         self.log_requested.emit("Homing all axes...")
+
+        if self.esp32.connected():
+            self.esp32.move_z_arm_down()
+        else:
+            self.log_requested.emit("ESP32 unavailable — skipping Z-arm lower before home.")
         try:
             command = self.controller.writer.home_axis(axis="all")
             self.controller.send_commands(commands=[command])
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
-
-    @pyqtSlot()
-    def execute_probe_z(self):
-        if not self.controller:
-            return
-        self.log_requested.emit("Probing Z height...")
-        try:
-            commands = [
-                self.controller.writer.positioning(reference="relative"),
-                self.controller.writer.rapid_positioning(x=136, y=36),
-            ]
-            self.controller.send_commands(commands=commands)
-            self.controller.send_commands(commands=[self.controller.writer.probe_z()])
-        except Exception as e:
-            self.log_requested.emit(f"Probe Z error: {str(e)}")
 
     @pyqtSlot()
     def execute_find_workspace(self):
@@ -242,7 +232,7 @@ class GCodeWorker(QObject):
         try:
             commands = [
                 self.controller.writer.positioning(reference="relative"),
-                self.controller.writer.move_up_down(z=10),  # Move up for clearance
+                self.controller.writer.move_up_down(z=5),  # Move up for clearance
                 self.controller.writer.set_workspace(),
                 self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.rapid_positioning(x=0, y=0),
@@ -388,13 +378,9 @@ class GCodeWorker(QObject):
         self.log_requested.emit("Moving to image capture position...")
         try:
             commands = [
-                self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.set_workspace(),
-                self.controller.writer.rapid_positioning(x=0, y=0, z=0),
-                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.positioning(reference="absolute"),
                 self.controller.writer.move_up_down(z=10),
-                self.controller.writer.positioning(reference="absolute"),
-                self.controller.writer.set_workspace(),
                 self.controller.writer.rapid_positioning(x=-10, y=14),
             ]
             self.controller.send_commands(commands=commands)
@@ -732,6 +718,58 @@ class GCodeWorker(QObject):
         self.execute_return_to_start()
 
         self.log_requested.emit("Soldering sequence complete.")
+
+
+    @pyqtSlot()
+    def execute_probe_z(self):
+
+        self.log_requested.emit("Probing Z height...")
+        try:
+            commands = [
+                self.controller.writer.set_workspace(),
+                self.controller.writer.positioning(reference="absolute"),
+                self.controller.writer.rapid_positioning(x=None, y=None,z=20),
+                self.controller.writer.rapid_positioning(x=78, y=-45),
+            ]
+            self.controller.send_commands(commands=commands)
+            self.controller.send_commands(commands=[self.controller.writer.probe_z()])
+            timeout, waited = 15, 0
+            while waited < timeout:
+                if "Idle" in self.controller.poll_grbl():
+                    break
+                time.sleep(0.2)
+                waited += 0.2
+        except Exception as e:
+            self.log_requested.emit(f"Probe Z error: {str(e)}")
+            return
+
+        raw_data = self.controller.poll_grbl()
+        match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
+        z_val = float(match.group(3)) if match else None
+        self.log_requested.emit(f"Probed Z: {z_val}" if z_val is not None else "Warning: could not parse Z")
+
+        try:
+            with open("board_data.json", "r") as f:
+                board_data = json.load(f)
+            board_data['first_hole'][2] = z_val
+            with open("board_data.json", "w", encoding="utf-8") as f:
+                json.dump(board_data, f, indent=2)
+        except Exception as e:
+            self.log_requested.emit(f"Error saving board data: {str(e)}")
+
+        try:
+            self.controller.send_commands(commands=[
+                self.controller.writer.positioning(reference="relative"),
+                self.controller.writer.move_up_down(z=10),
+            ])
+            time.sleep(1)
+        except Exception as e:
+            self.log_requested.emit(f"Z jog error: {str(e)}")
+
+        if self.esp32:
+            self.esp32.move_z_arm_up()
+
+        # self.execute_return_to_start()
 
 class JogControlPanel(QWidget):
     def __init__(self, parent_logger=None, compact=False):

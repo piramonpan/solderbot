@@ -2,6 +2,7 @@
 SolderBot main layout: persistent camera (left) + step workflow (right).
 """
 
+import re
 import time
 import json
 import os
@@ -24,7 +25,7 @@ from ui.tabs.edit_tab_widgets.image_selector import ImagePopUp
 from ui.tabs.repeatability_tab import RepeatabilityTab
 from core.image_processing import ImageProcessor
 
-IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_11.jpg"
+IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\captured_image.jpg"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PALETTE  (dark theme)
@@ -804,7 +805,6 @@ class WorkflowPanel(QWidget):
         self.popup.show()
 
     def _on_image_captured(self, cv_frame):
-        # cv_frame = cv2.imread(IMG_PATH)  # static image for testing
         self.cv_frame = cv_frame
         self.image_processor = ImageProcessor(cv_frame)
         self.image_processor.find_pixel_locations()
@@ -889,15 +889,23 @@ class WorkflowPanel(QWidget):
         def _hole(x, y):
             print(f"Calculating hole number for pixel ({x}, {y})")
             # Use the actual pitch from image processing instead of hardcoded 23
-            pitch = self.image_processor.pixel_mm_ratio * 3.81  # 3.81mm is the standard hole spacing on a protoboard
+            pitch = self.image_processor.pixel_mm_ratio * 2.54  # 2.54mm is the standard hole spacing on a protoboard
             
             # Calculate grid coordinates (0-based, no radius subtraction needed since points are at centers)
-            x_num = int((x - self.image_processor.first_hole_pixel[0]) / 22) + 1 # radius = 3, holespacing = 22
-            y_num = int((y - self.image_processor.first_hole_pixel[1]) / 22) + 1
+            x_num = int((x - self.image_processor.first_hole_pixel[0]) / 24) + 1 # radius = 3, holespacing = 22
+            y_num = int((y - self.image_processor.first_hole_pixel[1]) / 24) + 1
             print(f"Calculated hole number: ({x_num}, {y_num})")
 
             return y_num, x_num
             # return [int((y - 80 - 3) / 22) + 1, int((x - 75 - 3) / 22) + 1]
+
+        with open("board_data.json", "r") as f:
+                board_data = json.load(f)
+
+        if len(board_data['first_hole']) < 3:
+            z_val = -22.4
+        else:
+            z_val = board_data['first_hole'][2]
 
         data = {
             "camera_pixel_zero": (
@@ -907,9 +915,9 @@ class WorkflowPanel(QWidget):
             ),
             "pixel_mm_ratio": self.image_processor.pixel_mm_ratio,
             "first_hole": (
-                self.image_processor.first_hole_pixel.tolist() + [-22.4]
+                self.image_processor.first_hole_pixel.tolist() + [z_val]
                 if hasattr(self.image_processor.first_hole_pixel, "tolist")
-                else list(self.image_processor.first_hole_pixel) + [0.0]
+                else list(self.image_processor.first_hole_pixel) + [z_val]
             ),
             "points": [_hole(x, y) for x, y in self.s3.scene.points],
             "lines":  [{"start": _hole(*s), "end": _hole(*e)}
@@ -929,12 +937,12 @@ class WorkflowPanel(QWidget):
             with open("board_data.json") as f:
                 data = json.load(f)
             px, py = data["first_hole"][0], data["first_hole"][1]
-            z = data["first_hole"][2] + 3
+            z = -28 - data["first_hole"][2]
             phx, phy = data["camera_pixel_zero"]
             ratio = data["pixel_mm_ratio"]
             x = round((px - phx) / ratio, 2)
             y = round((py - phy) / ratio, 2)
-            self.request_first_hole_pan.emit(x, -y, -z)
+            self.request_first_hole_pan.emit(x, -y, z)
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Pan to first hole failed: {e}")
