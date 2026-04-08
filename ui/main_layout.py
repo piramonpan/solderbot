@@ -887,7 +887,17 @@ class WorkflowPanel(QWidget):
             self.go_to(4)  # skip to jog page if no image processor (shouldn't happen)
             return
         def _hole(x, y):
-            return [int((y - 80 - 3) / 22) + 1, int((x - 75 - 3) / 22) + 1]
+            print(f"Calculating hole number for pixel ({x}, {y})")
+            # Use the actual pitch from image processing instead of hardcoded 23
+            pitch = self.image_processor.pixel_mm_ratio * 3.81  # 3.81mm is the standard hole spacing on a protoboard
+            
+            # Calculate grid coordinates (0-based, no radius subtraction needed since points are at centers)
+            x_num = int((x - self.image_processor.first_hole_pixel[0]) / 22) + 1 # radius = 3, holespacing = 22
+            y_num = int((y - self.image_processor.first_hole_pixel[1]) / 22) + 1
+            print(f"Calculated hole number: ({x_num}, {y_num})")
+
+            return y_num, x_num
+            # return [int((y - 80 - 3) / 22) + 1, int((x - 75 - 3) / 22) + 1]
 
         data = {
             "camera_pixel_zero": (
@@ -1148,7 +1158,7 @@ class SolderBotMainLayout(QWidget):
         wf.request_clean.connect(self.gcode_worker.execute_clean)
         wf.request_return_start.connect(self.gcode_worker.execute_return_to_start)
         wf.request_first_hole_pan.connect(self.gcode_worker.execute_pan_test)
-        wf.request_start_sequence.connect(self.gcode_worker.execute_start_line_soldering_vertical)
+        wf.request_start_sequence.connect(self.gcode_worker.execute_soldering_full)
         wf.request_take_image.connect(self.gcode_worker.execute_take_image)
         wf.request_iron_on.connect(self.gcode_worker.execute_iron_on)
         wf.request_iron_off.connect(self.gcode_worker.execute_iron_off)

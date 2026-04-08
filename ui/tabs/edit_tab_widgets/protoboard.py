@@ -48,7 +48,7 @@ class ProtoBoardScene(QGraphicsScene):
             return
 
         # crop image
-        rect = QRect(500, 0, 800, 650)
+        rect = QRect(500, 0, 1200, 650)
         pixmap = pixmap.copy(rect)
 
         # add image
@@ -264,12 +264,12 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             end_x, end_y = self.find_closest_hole(None, False, pos.x(), pos.y()) 
 
             self.current_line.setLine(
-                self.start_x,self.start_y,
+                self.start_x, self.start_y,
                 end_x, end_y
             )
             print("Line drawn (scene coordinates):", self.start_x, self.start_y, end_x, end_y)
-            self.start_lines.append((self.start_x,self.start_y))
-            self.end_lines.append((end_x, end_y))
+            self.start_lines.append((self.start_x + 500,self.start_y))
+            self.end_lines.append((end_x + 500, end_y))
             self.current_line = None
         super().mouseReleaseEvent(event)
 

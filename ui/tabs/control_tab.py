@@ -109,7 +109,7 @@ class GCodeWorker(QObject):
         y_val = 69.8
         z_val = -10
 
-        x_val = 59 + 3.5
+        x_val = 59 + 4
         y_val = 112.5 - 4.6
         z_val = -20 - 8
 
@@ -254,9 +254,8 @@ class GCodeWorker(QObject):
         except Exception as e:
             self.log_requested.emit(f"G-Code Error: {str(e)}")
 
-    @pyqtSlot()
+    @pyqtSlot(str)
     def execute_soldering_full(self, board_data_path):
-
         # line solder first
         self.execute_line_soldering(board_data_path)
 
@@ -278,25 +277,25 @@ class GCodeWorker(QObject):
         # Jog Z up before starting
         commands = [
             self.controller.writer.positioning(reference="relative"),
-            self.controller.writer.move_up_down(z=10),
+            self.controller.writer.move_up_down(z=7),
         ]
         self.controller.send_commands(commands=commands)
 
         counter = 0
         for point in board_data.get("points", []):
             row, col = point[0], point[1]
-            if counter > 5:  # Clean tip every 5 holes
+            if counter > 80:  # Clean tip every 20 holes
                 self.execute_clean()
                 counter = 0
                 time.sleep(20)
 
             self.execute_goto_grid_2(row - 1, col - 1)
-            self.execute_custom_solder_2(extrude_time=0.5, hold_time=2)
+            self.execute_custom_solder_2(extrude_time=0.5, hold_time=0.5, hold_before=0.2)
 
             jog_cmds = [
                 self.controller.writer.positioning(reference="relative"),
                 self.controller.writer.rapid_positioning(x=1, y=None, z=2),
-                self.controller.writer.move_up_down(z=8),
+                self.controller.writer.move_up_down(z=5),
             ]
             self.controller.send_commands(commands=jog_cmds)
             counter += 1
@@ -477,6 +476,9 @@ class GCodeWorker(QObject):
 
     @pyqtSlot(str)
     def execute_line_soldering(self, board_data_path):
+
+        soldered_points = set()  # To track which points have been soldered for adhesion logic
+
         try:
             with open(board_data_path, 'r') as f:
                 board_data = json.load(f)
@@ -503,7 +505,7 @@ class GCodeWorker(QObject):
             # Shared Jog Command
             jog_up = [
                 self.controller.writer.positioning(reference="relative"),
-                self.controller.writer.rapid_positioning(x=1, z=2),
+                self.controller.writer.rapid_positioning(x=1, y=None, z=2),
                 self.controller.writer.move_up_down(z=5)
             ]
 
@@ -514,11 +516,13 @@ class GCodeWorker(QObject):
                 
                 self.execute_goto_grid_2(curr_r - 1, curr_c - 1)
                 self.execute_custom_solder_2(
-                    extrude_time=0.5 if is_horiz else 0.3, 
-                    hold_time=0.5 if is_horiz else 0.2
+                    extrude_time=0.3, 
+                    hold_time=0.5,
+                    hold_before=0.2
                 )
                 self.controller.send_commands(jog_up)
 
+                soldered_points.add((curr_r, curr_c))  # Track soldered point for adhesion logic
                 if i == 0: 
                     continue # Adhesion logic
 
@@ -543,20 +547,20 @@ class GCodeWorker(QObject):
                 # Add movement steps based on axis
                 if is_horiz:
                     shimmy.extend([
-                        self.controller.writer.linear_interpolation(x=-0.5, y=None, f=400),
-                        self.controller.writer.linear_interpolation(x=-0.5, y=None, f=400),
-                        self.controller.writer.linear_interpolation(x=1.2, y=None, f=400),
+                        self.controller.writer.linear_interpolation(x=-0.5, y=None, f=600),
+                        self.controller.writer.linear_interpolation(x=-0.5, y=None, f=600),
+                        self.controller.writer.linear_interpolation(x=1.5, y=None, f=600)
                     ])
                 else:
                     shimmy.extend([
-                        self.controller.writer.linear_interpolation(x=None, y=0.5, f=400),
-                        self.controller.writer.linear_interpolation(x=None, y=0.5, f=400),
-                        self.controller.writer.linear_interpolation(x=None, y=-1.2, f=400),
+                        self.controller.writer.linear_interpolation(x=None, y=0.5, f=600),
+                        self.controller.writer.linear_interpolation(x=None, y=0.5, f=600),
+                        self.controller.writer.linear_interpolation(x=None, y=-1.5, f=600)
                     ])
 
 
-                shimmy.extend([self.controller.writer.move_up_down(z=-0.3),
-                        self.controller.writer.stop_dispensing()])
+                shimmy.extend([self.controller.writer.stop_dispensing(),
+                               self.controller.writer.move_up_down(z=-0.3)])
                 
                 self.controller.send_commands(shimmy)
                 time.sleep(0.2)
