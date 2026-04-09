@@ -280,7 +280,7 @@ class GCodeWorker(QObject):
                 time.sleep(20)
 
             self.execute_goto_grid_2(row - 1, col - 1)
-            self.execute_custom_solder_2(extrude_time=0.5, hold_time=0.5, hold_before=0.2)
+            self.execute_custom_solder_2(extrude_time=0.2, hold_time=2, hold_before=2)
 
             jog_cmds = [
                 self.controller.writer.positioning(reference="relative"),

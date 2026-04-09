@@ -902,7 +902,13 @@ class WorkflowPanel(QWidget):
         if not self.image_processor:
             self.go_to(4)  # skip to jog page if no image processor (shouldn't happen)
             return
+
         def _hole(x, y):
+            y_num, x_num = self.calculate_grid(x, y)
+
+            return y_num, x_num
+        
+            print(f"Holes on board: {(self.s3.scene.holes)}")
             print(f"Calculating hole number for pixel ({x}, {y})")
             # Use the actual pitch from image processing instead of hardcoded 23
             pitch = self.image_processor.pixel_mm_ratio * 2.54  # 2.54mm is the standard hole spacing on a protoboard
@@ -923,6 +929,9 @@ class WorkflowPanel(QWidget):
         else:
             z_val = board_data['first_hole'][2]
 
+        self.x_bins = self.get_bins([c[0] for c in self.s3.scene.holes])
+        self.y_bins = self.get_bins([c[1] for c in self.s3.scene.holes])
+        
         data = {
             "camera_pixel_zero": (
                 self.image_processor.pixel_home.tolist()
@@ -943,6 +952,28 @@ class WorkflowPanel(QWidget):
             json.dump(data, f, indent=2)
         self.go_to(4)
 
+    def calculate_grid(self, x, y):
+        # print(x_bins)
+        # print(y_bins)
+
+        col = min(range(len(self.x_bins)), key=lambda i: abs(self.x_bins[i] - (x - 500)))
+        row = min(range(len(self.y_bins)), key=lambda i: abs(self.y_bins[i] - y))
+        print(f"Calculated grid position: ({row}, {col})")
+
+        return row + 1, col + 1
+
+    def get_bins(self, values, threshold=10):
+        """Clusters values that are close together into a single representative coordinate."""
+        sorted_vals = sorted(list(set(values)))
+        if not sorted_vals: return []
+        
+        bins = [sorted_vals[0]]
+        for v in sorted_vals[1:]:
+            if v - bins[-1] > threshold:
+                bins.append(v)
+
+        return bins
+    
     # ── step 4 ────────────────────────────────────────────────────────────
     def _jog(self, axis: str, direction: int):
         step = float(self.s4.jog_panel.step_size) * direction
