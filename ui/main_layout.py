@@ -902,7 +902,13 @@ class WorkflowPanel(QWidget):
         if not self.image_processor:
             self.go_to(4)  # skip to jog page if no image processor (shouldn't happen)
             return
+
         def _hole(x, y):
+            #y_num, x_num = self.calculate_grid(x, y)
+
+            #return y_num, x_num
+        
+            print(f"Holes on board: {(self.s3.scene.holes)}")
             print(f"Calculating hole number for pixel ({x}, {y})")
             holes = []
             # Use the actual pitch from image processing instead of hardcoded 23
@@ -967,8 +973,12 @@ class WorkflowPanel(QWidget):
         if len(board_data['first_hole']) < 3:
             z_val = -22.4
         else:
+            print(board_data['first_hole'])
             z_val = board_data['first_hole'][2]
 
+        self.x_bins = self.get_bins([c[0] for c in self.s3.scene.holes])
+        self.y_bins = self.get_bins([c[1] for c in self.s3.scene.holes])
+        
         data = {
             "camera_pixel_zero": (
                 self.image_processor.pixel_home.tolist()
@@ -989,6 +999,28 @@ class WorkflowPanel(QWidget):
             json.dump(data, f, indent=2)
         self.go_to(4)
 
+    def calculate_grid(self, x, y):
+        # print(x_bins)
+        # print(y_bins)
+
+        col = min(range(len(self.x_bins)), key=lambda i: abs(self.x_bins[i] - (x - 500)))
+        row = min(range(len(self.y_bins)), key=lambda i: abs(self.y_bins[i] - y))
+        print(f"Calculated grid position: ({row}, {col})")
+
+        return row + 1, col + 1
+
+    def get_bins(self, values, threshold=10):
+        """Clusters values that are close together into a single representative coordinate."""
+        sorted_vals = sorted(list(set(values)))
+        if not sorted_vals: return []
+        
+        bins = [sorted_vals[0]]
+        for v in sorted_vals[1:]:
+            if v - bins[-1] > threshold:
+                bins.append(v)
+
+        return bins
+    
     # ── step 4 ────────────────────────────────────────────────────────────
     def _jog(self, axis: str, direction: int):
         step = float(self.s4.jog_panel.step_size) * direction
@@ -1010,6 +1042,15 @@ class WorkflowPanel(QWidget):
                 self.logger.error(f"Pan to first hole failed: {e}")
                 
     def clear_json(self):
+        with open("board_data.json", "r") as f:
+            board_data = json.load(f)
+
+        if len(board_data['first_hole']) < 3:
+            z_val = -22.4
+        else:
+            print(board_data['first_hole'])
+            z_val = board_data['first_hole'][2]
+
         data = {
             "camera_pixel_zero": (
                 self.image_processor.pixel_home.tolist()
@@ -1018,9 +1059,9 @@ class WorkflowPanel(QWidget):
             ),
             "pixel_mm_ratio": self.image_processor.pixel_mm_ratio,
             "first_hole": (
-                self.image_processor.first_hole_pixel.tolist() + [-22.4]
+                self.image_processor.first_hole_pixel.tolist() + [z_val]
                 if hasattr(self.image_processor.first_hole_pixel, "tolist")
-                else list(self.image_processor.first_hole_pixel) + [0.0]
+                else list(self.image_processor.first_hole_pixel) + [z_val]
             ),
             "points": [],
             "lines":  [],

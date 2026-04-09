@@ -252,6 +252,9 @@ class GCodeWorker(QObject):
         # point solder next
         self.execute_point_soldering(board_data_path)
 
+        self.execute_clean()
+        self.log_requested.emit("Full soldering sequence complete!")
+
     @pyqtSlot(str)
     def execute_point_soldering(self, board_data_path):
         try:
@@ -280,7 +283,7 @@ class GCodeWorker(QObject):
                 time.sleep(20)
 
             self.execute_goto_grid_2(row - 1, col - 1)
-            self.execute_custom_solder_2(extrude_time=0.5, hold_time=0.5, hold_before=0.2)
+            self.execute_custom_solder_2(extrude_time=0.2, hold_time=2, hold_before=2)
 
             jog_cmds = [
                 self.controller.writer.positioning(reference="relative"),
@@ -552,7 +555,7 @@ class GCodeWorker(QObject):
                 time.sleep(0.2)
                 self.controller.send_commands(jog_up)
                 time.sleep(0.2)
-
+    
         self.execute_return_to_start()
         self.log_requested.emit("Soldering sequence complete.")
 
