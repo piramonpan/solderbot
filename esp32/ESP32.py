@@ -4,7 +4,7 @@ import threading
 import re
 
 class ESP32:
-    def __init__(self, bt_port="COM8"):
+    def __init__(self, bt_port="COM11"):
         self.bt_port = bt_port
         self.ser = None
         self._log_thread = None

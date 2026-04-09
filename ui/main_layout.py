@@ -2,11 +2,11 @@
 SolderBot main layout: persistent camera (left) + step workflow (right).
 """
 
-import re
 import time
 import json
 import os
 import cv2
+import math
 
 from serial.tools import list_ports
 
@@ -904,12 +904,58 @@ class WorkflowPanel(QWidget):
             return
         def _hole(x, y):
             print(f"Calculating hole number for pixel ({x}, {y})")
+            holes = []
             # Use the actual pitch from image processing instead of hardcoded 23
-            pitch = self.image_processor.pixel_mm_ratio * 2.54  # 2.54mm is the standard hole spacing on a protoboard
+
+            x_threshold = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            y_threshold = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+            grid_xs = sorted(set(x for x, y in self.s3.scene.holes))
+            grid_ys = sorted(set(y for x, y in self.s3.scene.holes))
+
+            # account for crop offset
+            index = 0
+            for col in grid_xs:
+                x_add = col + self.s3.scene.crop_offset
+                grid_xs.insert(index, x_add)
+                grid_xs.pop(index+1)
+                index += 1
+
+            # remove points that are in the same column/row as detected holes
+            for col in grid_xs:
+                add_x = True
+                for value in x_threshold:
+                    if add_x and (col + value) in grid_xs:
+                        add_x = False
+                        if add_x is False:
+                            grid_xs.remove((col+value))
+                            add_x = True
+
+            for row in grid_ys:
+                add_y = True
+                for value in y_threshold:
+                    if add_y and (row + value) in grid_ys:
+                        add_y = False
+                        if add_y is False:
+                            grid_ys.remove((row+value))
+                            add_y = True
             
-            # Calculate grid coordinates (0-based, no radius subtraction needed since points are at centers)
-            x_num = int((x - self.image_processor.first_hole_pixel[0]) / 24) + 1 # radius = 3, holespacing = 22
-            y_num = int((y - self.image_processor.first_hole_pixel[1]) / 24) + 1
+            print(f'rows: {grid_ys}')
+            print(f'columns: {grid_xs}')
+
+            for col in grid_xs:
+                for row in grid_ys:
+                    holes.append((col, row))
+    
+            nearest_hole = min(
+                holes,
+                key=lambda p: (p[0] - x)**2 + (p[1] - y)**2
+            )
+
+            print('nearest hole: ', nearest_hole)
+
+            x_num = int(round((nearest_hole[0] - self.image_processor.first_hole_pixel[0]) / 23)) + 1
+            y_num = int(round((nearest_hole[1] - self.image_processor.first_hole_pixel[1]) / 23)) + 1
             print(f"Calculated hole number: ({x_num}, {y_num})")
 
             return y_num, x_num

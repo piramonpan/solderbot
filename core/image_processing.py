@@ -177,7 +177,7 @@ class ImageProcessor:
             filtered_holes = [
                 (int(kp.pt[0]), int(kp.pt[1])) for kp in filtered
             ]
-            print(sorted(filtered_holes))
+            #print(sorted(filtered_holes))
 
         return filtered
 

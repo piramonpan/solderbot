@@ -99,7 +99,7 @@ class ProtoBoardScene(QGraphicsScene):
         self.detected_holes = [
             (int(kp.pt[0]), int(kp.pt[1])) for kp in filtered_points
         ]
-        print(sorted(self.detected_holes))
+        #print(sorted(self.detected_holes))
 
     def draw_board(self):
         self.draw_holes(self.detected_holes)
