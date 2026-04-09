@@ -253,6 +253,7 @@ class GCodeWorker(QObject):
         self.execute_point_soldering(board_data_path)
 
         self.execute_clean()
+        self.execute_return_to_start()
         self.log_requested.emit("Full soldering sequence complete!")
 
     @pyqtSlot(str)
@@ -392,76 +393,36 @@ class GCodeWorker(QObject):
 
     @pyqtSlot()
     def execute_full_setup(self):
-        """Run home → probe Z → find workspace sequentially in the worker thread."""
+        """Run home  → find workspace -> probe Z sequentially in the worker thread."""
         if not self.controller:
             return
 
         # Step 1: Home
         self.log_requested.emit("Full setup (1/3): Homing all axes...")
-        try:
-            if self.esp32:
-                self.esp32.move_z_arm_down()
-            command = self.controller.writer.home_axis(axis="all")
-            self.controller.send_commands(commands=[command])
-            timeout, waited = 30, 0
-            while waited < timeout:
-                if "Idle" in self.controller.poll_grbl():
-                    break
-                time.sleep(0.2)
-                waited += 0.2
-        except Exception as e:
-            self.log_requested.emit(f"Home error: {str(e)}")
-            return
 
-        # Step 2: Probe Z
-        self.log_requested.emit("Full setup (2/3): Probing Z height...")
-        try:
-            commands = [
-                self.controller.writer.positioning(reference="relative"),
-                self.controller.writer.rapid_positioning(x=136, y=36),
-            ]
-            self.controller.send_commands(commands=commands)
-
-            self.controller.send_commands(commands=[self.controller.writer.probe_z()])
-            timeout, waited = 15, 0
-            while waited < timeout:
-                if "Idle" in self.controller.poll_grbl():
-                    break
-                time.sleep(0.2)
-                waited += 0.2
-        except Exception as e:
-            self.log_requested.emit(f"Probe Z error: {str(e)}")
-            return
-
-        raw_data = self.controller.poll_grbl()
-        match = re.search(r'MPos:([-0-9.]+),([-0-9.]+),([-0-9.]+)', raw_data)
-        z_val = float(match.group(3)) if match else None
-        self.log_requested.emit(f"Probed Z: {z_val}" if z_val is not None else "Warning: could not parse Z")
-
-        try:
-            with open("board_data.json", "r") as f:
-                board_data = json.load(f)
-            board_data['first_hole'][2] = z_val
-            with open("board_data.json", "w", encoding="utf-8") as f:
-                json.dump(board_data, f, indent=2)
-        except Exception as e:
-            self.log_requested.emit(f"Error saving board data: {str(e)}")
-
-        try:
-            self.controller.send_commands(commands=[
-                self.controller.writer.positioning(reference="relative"),
-                self.controller.writer.move_up_down(z=10),
-            ])
-            time.sleep(1)
-        except Exception as e:
-            self.log_requested.emit(f"Z jog error: {str(e)}")
-
-        if self.esp32:
-            self.esp32.move_z_arm_up()
-
-        # Step 3: Find Workspace
-        self.log_requested.emit("Full setup (3/3): Finding workspace...")
+        self.execute_home()
+        # try:
+        #     if self.esp32:
+        #         self.esp32.move_z_arm_down()
+        #     command = self.controller.writer.home_axis(axis="all")
+        #     self.controller.send_commands(commands=[command])
+        #     timeout, waited = 30, 0
+        #     while waited < timeout:
+        #         if "Idle" in self.controller.poll_grbl():
+        #             break
+        #         time.sleep(0.2)
+        #         waited += 0.2
+        # except Exception as e:
+        #     self.log_requested.emit(f"Home error: {str(e)}")
+        #     return
+        
+        # Step 2: Find Workspace
+        self.log_requested.emit("Full setup (2/3): Finding workspace...")
         self.execute_find_workspace()
+
+        # Step 3: Probe Z
+        self.log_requested.emit("Full setup (3/3): Probing Z height...")
+        self.execute_probe_z()
 
     @pyqtSlot(str)
     def execute_line_soldering(self, board_data_path):
@@ -1290,7 +1251,7 @@ class ControlTab(QWidget):
         print("moving down from z:", z_val)
         
         pixel_home_x, pixel_home_y = data.get("camera_pixel_zero", [0, 0])
-        pixel_mm_ratio = data.get("pixel_mm_ratio", 1)
+        pixel_mm_ratio = data.get("pixel_mm_ratio", 9.36)
 
         if not pixel_mm_ratio:
             self.logger.error("pixel_mm_ratio is zero — cannot calculate real-world coordinates.")

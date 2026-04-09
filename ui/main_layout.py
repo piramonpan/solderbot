@@ -25,7 +25,7 @@ from ui.tabs.edit_tab_widgets.image_selector import ImagePopUp
 from ui.tabs.repeatability_tab import RepeatabilityTab
 from core.image_processing import ImageProcessor
 
-IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\captured_image.jpg"
+IMG_PATH = r"C:\Users\piram\Desktop\solderbot\data\test_images\TEST_11.jpg"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PALETTE  (dark theme)
@@ -811,6 +811,7 @@ class WorkflowPanel(QWidget):
         self.popup.show()
 
     def _on_image_captured(self, cv_frame):
+        # cv_frame = cv2.imread(IMG_PATH)
         self.cv_frame = cv_frame
         self.image_processor = ImageProcessor(cv_frame)
         self.image_processor.find_pixel_locations()
@@ -962,7 +963,8 @@ class WorkflowPanel(QWidget):
 
             x_num = int(round((nearest_hole[0] - self.image_processor.first_hole_pixel[0]) / 23)) + 1
             y_num = int(round((nearest_hole[1] - self.image_processor.first_hole_pixel[1]) / 23)) + 1
-            print(f"Calculated hole number: ({x_num}, {y_num})")
+
+            self.logger.info(f"Calculated hole number: ({x_num}, {y_num})")
 
             return y_num, x_num
             # return [int((y - 80 - 3) / 22) + 1, int((x - 75 - 3) / 22) + 1]
@@ -1051,18 +1053,11 @@ class WorkflowPanel(QWidget):
             print(board_data['first_hole'])
             z_val = board_data['first_hole'][2]
 
+
         data = {
-            "camera_pixel_zero": (
-                self.image_processor.pixel_home.tolist()
-                if hasattr(self.image_processor.pixel_home, "tolist")
-                else self.image_processor.pixel_home
-            ),
-            "pixel_mm_ratio": self.image_processor.pixel_mm_ratio,
-            "first_hole": (
-                self.image_processor.first_hole_pixel.tolist() + [z_val]
-                if hasattr(self.image_processor.first_hole_pixel, "tolist")
-                else list(self.image_processor.first_hole_pixel) + [z_val]
-            ),
+            "camera_pixel_zero": board_data.get("camera_pixel_zero", [0, 0]),
+            "pixel_mm_ratio": board_data.get("pixel_mm_ratio", 1.0),
+            "first_hole": board_data.get("first_hole", [0, 0, 0]),
             "points": [],
             "lines":  [],
         }
