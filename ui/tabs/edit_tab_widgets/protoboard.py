@@ -33,6 +33,7 @@ class ProtoBoardScene(QGraphicsScene):
         self.holes = []
         self.solder_holes = []
         self.solder_lines = []
+        self.crop_offset = 500
 
     def load_background(
         self,
@@ -48,7 +49,7 @@ class ProtoBoardScene(QGraphicsScene):
             return
 
         # crop image
-        rect = QRect(500, 0, 1200, 650)
+        rect = QRect(self.crop_offset, 0, 1200, 650)
         pixmap = pixmap.copy(rect)
 
         # add image
@@ -81,7 +82,7 @@ class ProtoBoardScene(QGraphicsScene):
 
         # set first hole pixel in overlay image
         overlay_first_hole = (
-            first_hole[0] - 500, 
+            first_hole[0] - self.crop_offset, 
             first_hole[1]
         )  # adjust for cropping offset
 
@@ -187,11 +188,15 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
 
         self.add_point_mode = False
         self.add_line_mode = False
+        self.remove_line_mode = False
 
+        # for point and line removal
         self.circles = []
         self.circle = None
+        self.lines = []
 
     def mousePressEvent(self, event):
+        # draw selected points
         if event.button() == Qt.MouseButton.LeftButton and self.add_point_mode:
             pos = event.scenePos()  # position in scene coordinates
 
@@ -201,7 +206,7 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             hole_y = nearest_hole[1]
             
             # check if hole is already selected
-            if (hole_x + 500, hole_y) not in self.points:
+            if (hole_x + self.crop_offset, hole_y) not in self.points:
                 # Draw a small circle at the click
                 self.circle = QGraphicsEllipseItem(
                     hole_x - self.point_radius,
@@ -217,22 +222,22 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
                 self.circles.append(self.circle)
 
                 # Store the point coordinates
-                saved_coord = (hole_x + 500, hole_y) # cropped image offset = 500
+                saved_coord = (hole_x + self.crop_offset, hole_y) # cropped image offset = 500
                 self.points.append(saved_coord) 
                 print(f"Point stored: ({saved_coord[0]:.1f}, {saved_coord[1]:.1f})")
             else:
                 # erase circle if clicked again
-                index = self.points.index((hole_x + 500, hole_y))
+                index = self.points.index((hole_x + self.crop_offset, hole_y))
                 circle_to_remove = self.circles[index]
                 self.removeItem(circle_to_remove)
                 self.circles.remove(circle_to_remove)
                 print("circle removed")
 
                 # remove point coordinates
-                self.points.remove((hole_x + 500, hole_y)) # cropped image offset = 500
+                self.points.remove((hole_x + self.crop_offset, hole_y)) # cropped image offset = 500
                 print("coord removed")
 
-        # TODO: add line removal
+        # draw selected lines
         if event.button() == Qt.MouseButton.LeftButton and self.add_line_mode:
             pos = event.scenePos()
             self.start_x, self.start_y = self.find_closest_hole(None, False, pos.x(), pos.y()) 
@@ -244,6 +249,29 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
             self.current_line.setPen(self.line_pen)
             self.current_line.setZValue(2)  # on top of grid
             self.addItem(self.current_line)
+
+        # remove selected lines
+        if event.button() == Qt.MouseButton.LeftButton and self.remove_line_mode:
+            pos = event.scenePos()
+            x, y = self.find_closest_hole(None, False, pos.x(), pos.y())
+            closest_line = self.find_closest_line(x, y)
+
+            if closest_line is None:
+                print("No lines to remove.")
+                return
+            
+            # delete line coordinates
+            coord = closest_line.line()
+            self.start_lines.remove((coord.x1() + self.crop_offset, coord.y1()))
+            self.end_lines.remove((coord.x2() + self.crop_offset, coord.y2()))
+
+            # erase line drawn
+            index = self.lines.index(closest_line)
+            line_to_remove = self.lines[index]
+            self.removeItem(line_to_remove)
+            self.lines.remove(line_to_remove)
+            print("line removed")
+                
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -267,13 +295,14 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
                 end_x, end_y
             )
             print("Line drawn (scene coordinates):", self.start_x, self.start_y, end_x, end_y)
-            self.start_lines.append((self.start_x + 500,self.start_y))
-            self.end_lines.append((end_x + 500, end_y))
+            self.start_lines.append((self.start_x + self.crop_offset,self.start_y))
+            self.end_lines.append((end_x + self.crop_offset, end_y))
+            self.lines.append(self.current_line)
             self.current_line = None
         super().mouseReleaseEvent(event)
 
-    def find_closest_hole(self, holes: Union[list, None], selector: bool, x_point: float, 
-                          y_point: float) -> list:
+    def find_closest_hole(self, holes: Union[list, None], selector: bool, 
+                          x_point: float, y_point: float) -> list:
         """ Finds and returns the nearest hole to the one the user selects
         """      
         # check context for finding closest hole
@@ -287,4 +316,32 @@ class ProtoBoardSceneWithLines(ProtoBoardScene):
         )
         
         return nearest_hole
+    
+    def find_closest_line(self, x_point: float, y_point: float):
+        """Returns the line item in self.lines closest to the given point."""
+        if not self.lines:
+            return None
+
+        def distance_sq_to_segment(line):
+            line_data = line.line()
+            x1, y1 = line_data.x1(), line_data.y1()
+            x2, y2 = line_data.x2(), line_data.y2()
+            dx = x2 - x1
+            dy = y2 - y1
+            if dx == 0 and dy == 0:
+                return (x_point - x1) ** 2 + (y_point - y1) ** 2
+
+            t = ((x_point - x1) * dx + (y_point - y1) * dy) / (dx * dx + dy * dy)
+            if t <= 0:
+                closest_x, closest_y = x1, y1
+            elif t >= 1:
+                closest_x, closest_y = x2, y2
+            else:
+                closest_x = x1 + t * dx
+                closest_y = y1 + t * dy
+
+            return (x_point - closest_x) ** 2 + (y_point - closest_y) ** 2
+
+        return min(self.lines, key=distance_sq_to_segment)
+
 
