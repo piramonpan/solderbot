@@ -399,7 +399,7 @@ class GRBLController:
         # move to cleaning station
         commands.append(self.writer.positioning("absolute"))
         commands.append(self.writer.move_up_down(self.height))
-        commands.append(self.writer.rapid_positioning(145, -55.0))
+        commands.append(self.writer.rapid_positioning(140, -55.0))
         commands.append(self.writer.positioning("relative"))
         commands.append(self.writer.move_up_down(-8))
 
